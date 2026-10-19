@@ -2,6 +2,11 @@
 
 ## 0.1.3
 
+### Changed
+
+- Requires `io_uring` `^0.1.1`, which provides `UringLoopPool` /
+  `UringLoopLease`.
+
 ### Fixed
 
 - `BytesMut.splitTo` / `splitOff` now mark the source frozen, so the returned
@@ -16,6 +21,11 @@
   buffer instead of allocating per request.
 - Linux `UringBytesFile` registers a small fixed-buffer set and uses
   `READ_FIXED` / `WRITE_FIXED`, falling back to normal ops when unsupported.
+- Added `openUringBytesFile(..., sharedLoop: true)` using the `io_uring`
+  0.1.1 `UringLoopPool` / `UringLoopLease`; fixed buffers are unregistered
+  before a lease is returned. Leases are exclusive, so this reuses reaper
+  isolates for sequential open/close workloads rather than multiplexing
+  concurrent files.
 - Added a core Bytes/BytesMut/reader/writer benchmark suite, including a raw
   `Uint8List` baseline, merged into the main benchmark card.
 

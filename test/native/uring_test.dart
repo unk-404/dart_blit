@@ -72,6 +72,30 @@ void main() {
     }
   });
 
+  test('shared loop lease survives close/reopen', () async {
+    final first = await openUringBytesFile(path, sharedLoop: true, entries: 16);
+    final data = _pattern(4096);
+    try {
+      expect(await first.writeAt(0, data), data.length);
+    } finally {
+      await first.close();
+    }
+
+    final second = await openUringBytesFile(
+      path,
+      create: false,
+      sharedLoop: true,
+      entries: 16,
+    );
+    try {
+      final back = Uint8List(data.length);
+      expect(await second.readAt(0, back), data.length);
+      expect(back, data);
+    } finally {
+      await second.close();
+    }
+  });
+
   test('read-only mode rejects writes', () async {
     final writer = await openUringBytesFile(path);
     await writer.writeAt(0, _pattern(8));

@@ -206,6 +206,11 @@ try {
 }
 ```
 
+Set `sharedLoop: true` to lease a ring from `package:io_uring`'s reference-counted
+`UringLoopPool`. Leases are exclusive: this reuses a reaper isolate across
+sequential open/close calls, while concurrent files still get separate loops.
+Fixed buffers are unregistered before the lease is returned.
+
 `entries` must be at least the batch size. The backend is Linux-only.
 
 ### Direct I/O

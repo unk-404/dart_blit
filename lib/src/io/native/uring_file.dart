@@ -24,14 +24,17 @@ final class UringBytesFile implements BytesFile {
     this._fd,
     this._loop,
     this._length,
+    this._lease,
   );
 
   final String path;
   final bool readOnly;
   final int _fd;
   final UringLoop _loop;
+  final UringLoopLease? _lease;
   int _length;
   bool _closed = false;
+  bool _fixedRegistered = false;
   final List<UringBuffer> _bufferPool = <UringBuffer>[];
   final Set<UringBuffer> _busyBuffers = <UringBuffer>{};
   final List<UringBuffer> _fixedBuffers = <UringBuffer>[];
@@ -112,7 +115,9 @@ final class UringBytesFile implements BytesFile {
         _fixedIndices[buffer] = i;
       }
       _loop.ring.registerBuffers(_fixedBuffers);
+      _fixedRegistered = true;
     } on Object {
+      _fixedRegistered = false;
       for (final buffer in _fixedBuffers) {
         buffer.dispose();
       }
@@ -125,11 +130,14 @@ final class UringBytesFile implements BytesFile {
   ///
   /// Throws [UnsupportedError] on non-Linux platforms.  [entries] is the SQ/CQ
   /// ring size; batch callers should raise it above the batch size.
+  /// [sharedLoop] leases a loop from `io_uring`'s process-wide
+  /// [UringLoopPool] instead of opening a private ring.
   static Future<UringBytesFile> open(
     String path, {
     bool create = true,
     bool readOnly = false,
     int entries = 256,
+    bool sharedLoop = false,
   }) async {
     if (!Platform.isLinux || Platform.isAndroid) {
       throw UnsupportedError('io_uring is only available on Linux');
@@ -141,14 +149,24 @@ final class UringBytesFile implements BytesFile {
         PosixConstants.oCloexec;
     final fd = Posix.open(path, flags: flags, mode: 0x1A4);
     UringLoop? loop;
+    UringLoopLease? lease;
     try {
-      loop = await UringLoop.open(entries: entries);
+      if (sharedLoop) {
+        lease = await UringLoop.acquire(entries: entries);
+        loop = lease.loop;
+      } else {
+        loop = await UringLoop.open(entries: entries);
+      }
       final length = File(path).lengthSync();
-      final file = UringBytesFile._(path, readOnly, fd, loop, length);
+      final file = UringBytesFile._(path, readOnly, fd, loop, length, lease);
       file._registerFixedBuffers(entries);
       return file;
     } on Object {
-      if (loop != null) await loop.close();
+      if (lease != null) {
+        await lease.release();
+      } else if (loop != null) {
+        await loop.close();
+      }
       Posix.close(fd);
       rethrow;
     }
@@ -321,7 +339,14 @@ final class UringBytesFile implements BytesFile {
     if (_closed) return;
     _closed = true;
     try {
-      await _loop.close();
+      if (_fixedRegistered) {
+        _fixedRegistered = false;
+        try {
+          _loop.ring.unregisterBuffers();
+        } on Object {
+          // The ring may already be faulted/closed; release still runs.
+        }
+      }
     } finally {
       Posix.close(_fd);
       for (final buffer in _bufferPool) {
@@ -335,6 +360,12 @@ final class UringBytesFile implements BytesFile {
       _fixedBuffers.clear();
       _fixedIndices.clear();
       _fixedBusy.clear();
+      final lease = _lease;
+      if (lease != null) {
+        await lease.release();
+      } else {
+        await _loop.close();
+      }
     }
   }
 
@@ -363,14 +394,20 @@ final class UringBytesFile implements BytesFile {
 }
 
 /// Opens a Linux io_uring-backed [BytesFile].
+///
+/// [sharedLoop] leases a loop from the process-wide [UringLoopPool] instead of
+/// creating a private reaper isolate. Leases are exclusive; use it for
+/// sequential open/close workloads, not to multiplex concurrent files.
 Future<UringBytesFile> openUringBytesFile(
   String path, {
   bool create = true,
   bool readOnly = false,
   int entries = 256,
+  bool sharedLoop = false,
 }) => UringBytesFile.open(
   path,
   create: create,
   readOnly: readOnly,
   entries: entries,
+  sharedLoop: sharedLoop,
 );
