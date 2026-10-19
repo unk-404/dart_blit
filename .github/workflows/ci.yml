@@ -144,10 +144,6 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
-    env:
-      # The composite action resolves releases from GITHUB_REPOSITORY by
-      # default; point it at the tool repository explicitly.
-      BENCH_SVG_RELEASE_BASE: https://github.com/unk-404/benchmark_svg/releases
     steps:
       - uses: actions/checkout@v4
         with:
@@ -255,14 +251,10 @@ jobs:
           Remove-Item bench-c.bin -Force -ErrorAction SilentlyContinue
 
       - name: Render benchmark SVG
-        # The action has no moving v1 tag; use its default branch and let the
-        # action resolve the latest bench-svg release.
+        # The action installs its own binary; input comes from [[series]] in
+        # bench-svg.toml, so no positional input is needed.
         uses: unk-404/benchmark_svg@master
         with:
-          version: latest
-          input: |
-            bench-dart.jsonl
-            bench-c.jsonl
           format: benchmark_test
           out: assets/benchmarks.svg
           config: bench-svg.toml

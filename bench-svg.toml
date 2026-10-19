@@ -8,6 +8,7 @@ width = 920
 min_height = 0
 max_rows = 15
 only_matched = true
+missing = "placeholder"
 kaomoji = "(◕‿◕)♡"
 
 [[series]]
@@ -68,8 +69,8 @@ note = "4 KiB random · 1 GiB mapping"
 unit = "IOPS"
 group = "mmap"
 
-# Dart-only engines: C has no equivalent implementation, so these rows render
-# with the Dart bar only.
+# Dart-only engines: C has no equivalent implementation, so these rows keep a
+# placeholder C track.
 [[row]]
 match = 'pool\.read\.random4K\.w(\d+)$'
 label = "Pool read · $1 workers"

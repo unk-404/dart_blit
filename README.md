@@ -243,7 +243,8 @@ The benchmark card above compares Dart with the C counterpart in
 [`benchmark/c/blit_bench.c`](benchmark/c/blit_bench.c). Both implement the same
 six single-thread operations: 8 MiB sequential read/write, 4 KiB random
 pread/pwrite, and 4 KiB random mmap read/write. Dart-only pool, large-file and
-IOCP rows are kept as single-series rows; they have no C counterpart by design.
+IOCP rows keep a placeholder C track because they have no C counterpart by
+design.
 
 The card is generated from the `benchmark/` suite with
 [`bench-svg`](https://github.com/unk-404/benchmark_svg). Raw JSONL/SVG artifacts
