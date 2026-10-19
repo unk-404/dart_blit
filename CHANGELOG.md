@@ -63,7 +63,7 @@ First development release.
 - Web OPFS backend: chunk files, double-slot manifest, CRC-32, dedicated
   worker, capability/quota probing.
 - Benchmark suite (`benchmark_test`, JIT/AOT + JSONL), a generated
-  `assets/benchmarks.svg`, and Dart/Flutter CI workflows.
+  `assets/benchmarks.svg`, and Dart/Web CI workflows.
 - Tests: differential fuzz, lifetime/error paths, 100k-op stress, 32 GiB sparse.
 
 ### Fixed during development

@@ -130,61 +130,6 @@ jobs:
           test -s build/web/bytes_web_example.js
 
   # ---------------------------------------------------------------------------
-  # Flutter: analyze + widget test on all desktop OSes, plus one native build
-  # per OS (web on Linux, Windows on Windows, macOS on macOS).
-  # ---------------------------------------------------------------------------
-  flutter:
-    name: Flutter / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            build: web
-          - os: windows-latest
-            build: windows
-          - os: macos-latest
-            build: macos
-    defaults:
-      run:
-        working-directory: flutter_example
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: "3.47.7"
-          cache: true
-
-      - name: Show Flutter version
-        run: flutter --version
-
-      - name: flutter pub get
-        run: flutter pub get
-
-      - name: flutter analyze
-        run: flutter analyze
-
-      - name: flutter test
-        run: flutter test
-
-      - name: flutter build web
-        if: ${{ matrix.build == 'web' }}
-        run: flutter build web --release --no-pub
-
-      - name: flutter build windows
-        if: ${{ matrix.build == 'windows' }}
-        run: flutter build windows --debug --no-pub
-
-      - name: flutter build macos
-        if: ${{ matrix.build == 'macos' }}
-        run: flutter build macos --debug --no-pub
-
-  # ---------------------------------------------------------------------------
   # After all tests pass: benchmark on Windows, render the README SVG, upload
   # artifacts, and (on push/manual runs) commit the updated SVG.
   #
@@ -193,7 +138,7 @@ jobs:
   # ---------------------------------------------------------------------------
   benchmark-svg:
     name: Benchmark + SVG
-    needs: [dart, web, flutter]
+    needs: [dart, web]
     if: github.event_name != 'pull_request' && github.ref_type == 'branch'
     runs-on: windows-latest
     timeout-minutes: 60

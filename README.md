@@ -1,65 +1,42 @@
 # blit
 
-Zero-copy `Bytes` / `BytesMut` and high-performance random-access file I/O for
-Dart and Flutter. Native I/O is pure `dart:ffi` (no C, no native build hooks);
-Web I/O uses OPFS chunk files and a dedicated worker.
+Zero-copy `Bytes` / `BytesMut` and fast random-access file I/O for Dart and
+Flutter. Native I/O is pure `dart:ffi`; Web I/O uses OPFS. No C compiler, native
+build hooks or native assets.
 
-![blit benchmark table](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks.svg)
+![blit benchmark card](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks.svg)
 
-## Features
+## Why blit
 
-- **Zero-copy `Bytes`**: `(buffer, offset, length)` views; `slice`/`sublist` are O(1).
-- **TypedData compat**: `Bytes.fromTypedData` / `TypedData.asBytes()` wrap `Uint8List`, `ByteData`, `ByteBuffer`, `Int32List`, etc. without copying; `BytesLike` is a small boundary interface for other byte libraries.
-- **`BytesMut`**: growable buffer; `freeze()`/`splitTo()`/`splitOff()` return zero-copy views with copy-on-write on later mutation.
-- **`Uint64`**: exact unsigned 64-bit values as two 32-bit limbs; works on VM, dart2js and dart2wasm without `Uint64List`/`ByteData.getUint64`.
-- **`BytesReader` / `BytesWriter`**: Rust `Buf`/`BufMut`-style fixed-width reads/writes, big-endian by default.
-- **`BytesFile`**: async random-access interface; native `dart:io` backend plus sync API.
-- **Native mmap engine** (`package:blit/bytes_ffi.dart`): `CreateFileMappingW`/`MapViewOfFile` on Windows, `mmap`/`pread`/`pwrite` on POSIX; sparse files, 64 KiB windows, zeroize.
-- **Windows IOCP engine** `IocpFile`: overlapped I/O + completion port, QD 1–128 for a single worker.
-- **Linux io_uring engine** `UringBytesFile`: pure-Dart SQ/CQ rings over raw syscalls, batched `readMany`/`writeMany`, no `liburing` or C shim (depends on `package:io_uring`).
-- **`ParallelBytesFile`**: native isolate worker pool + FIFO queue + watermark barriers; batch 32; `readMany`/`writeMany`; default `min(32, max(2, cpus-1))` workers; read-only mmap cache for hot files up to 1 GiB.
-- **Web OPFS backend**: chunk files + double-slot manifest + a worker pool; chunk `i` is served by `workers[i % N]`, the manifest has one writer, and 32 GiB logical files are metadata-only until written.
-- **Hand-written Web bindings**: only `dart:js_interop` declarations for `Worker`, `Blob`, `URL` and `navigator.storage`; no `package:web` dependency.
+- **Zero-copy `Bytes`** — a `(buffer, offset, length)` view; `slice`/`sublist`
+  are O(1).
+- **TypedData bridge** — `Bytes.fromTypedData` and `TypedData.asBytes()` wrap
+  `Uint8List`, `ByteData`, `Int32List`, etc. without copying. `BytesLike` is a
+  small zero-copy boundary interface for other byte libraries.
+- **`BytesMut`** — growable buffer; `freeze()` / `splitTo()` / `splitOff()`
+  return shared views with copy-on-write on later mutation.
+- **Exact `Uint64`** — two 32-bit limbs; works on VM, dart2js and dart2wasm
+  without `Uint64List` or `ByteData.getUint64`.
+- **Reader/writer cursors** — `BytesReader` / `BytesWriter` provide
+  `Buf`/`BufMut`-style fixed-width access.
+- **Native file engines** — mmap, isolate pool, Windows IOCP and Linux io_uring.
+- **Web backend** — OPFS chunks + double-slot manifest, with a chunk-worker
+  pool and an optional cross-origin-isolated SAB ring.
 
-No C compiler, native assets or `flutter config --enable-native-assets` is
-required. The only native code is the operating system's own I/O API, reached
-through `dart:ffi`; runtime dependencies are `package:ffi` and the pure-Dart
-`package:io_uring` (Linux ring backend).
-
-## Platform support
-
-| Capability | Windows | Linux | macOS | Android | iOS | Web |
-|---|---|---|---|---|---|---|
-| `Bytes`/`BytesMut`/`Uint64` | ✅ | ✅ | ✅ | ✅* | ✅* | ✅ |
-| `BytesFile` (`dart:io`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
-| Native mmap (`bytes_ffi.dart`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
-| `IocpFile` | ✅ | — | — | — | — | — |
-| `UringBytesFile` | — | ✅ | — | — | — | — |
-| `ParallelBytesFile` | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
-| OPFS backend | — | — | — | — | — | ✅ |
-
-`*` Android/iOS are not built or run by CI; the pure-Dart core is
-platform-independent, but mobile file paths are **unverified**. CI covers
-Dart on Ubuntu/macOS/Windows, Chrome on Ubuntu, and Flutter desktop/Web only.
-OPFS `createSyncAccessHandle` is dedicated-worker-only, takes an exclusive lock
-per file. Chunks are distributed across a small worker pool, while writes to one
-logical file are still serialized so the manifest stays single-writer. In a
-cross-origin-isolated page (`COOP: same-origin` + `COEP: require-corp`), small
-`read`/`write` calls use a `SharedArrayBuffer` ring (8 × 64 KiB slots); larger
-payloads and non-isolated pages fall back to postMessage transfer.
+Runtime dependencies are `package:ffi` and the pure-Dart `package:io_uring`
+(used only by the Linux ring backend).
 
 ## Install
 
-```yaml
-dependencies:
-  blit: ^0.1.0
+```bash
+dart pub add blit
 ```
 
-Requires Dart `^3.13.5`; Flutter 3.47.x includes a compatible Dart SDK.
+Requires Dart `^3.13.5`. A current Flutter SDK includes a compatible Dart SDK.
 
-## API examples
+## Quick start
 
-### Zero-copy bytes
+### Bytes and views
 
 ```dart
 import 'dart:typed_data';
@@ -73,10 +50,10 @@ backing[1] = 99;
 print(slice[0]); // 99
 ```
 
-Interop with Dart's typed data is zero-copy:
+Typed data interop is zero-copy:
 
 ```dart
-final bytes = Bytes.fromTypedData(byteData); // Uint8List/ByteData/Int32List...
+final bytes = Bytes.fromTypedData(byteData); // Uint8List / ByteData / Int32List
 final typed = bytes.asUint8List();            // zero-copy view
 ```
 
@@ -89,13 +66,11 @@ abstract interface class BytesLike {
 }
 ```
 
-Convert at the boundary, then keep `Bytes`/`Uint8List` in hot loops.
+Convert at the boundary, then stay on `Bytes` / `Uint8List` in hot loops.
 
 ### Encoding
 
 ```dart
-import 'package:blit/blit.dart';
-
 final mut = BytesMut(16)
   ..putUint32(0x01020304)
   ..putUint64(const Uint64(0x11223344, 0x55667788));
@@ -105,61 +80,51 @@ print(bytes.getUint32(0).toRadixString(16)); // 1020304
 print(bytes.getUint64(4));                   // 1234605616436508552
 ```
 
-### Native file
+### Random-access files
 
 ```dart
 import 'dart:typed_data';
 import 'package:blit/blit.dart';
 
 final file = await openBytesFile('/tmp/data.bin');
-await file.writeAt(0, Uint8List.fromList([1, 2, 3, 4]));
-await file.append(Uint8List.fromList([5, 6]));
+try {
+  await file.writeAt(0, Uint8List.fromList([1, 2, 3, 4]));
+  await file.append(Uint8List.fromList([5, 6]));
 
-final out = Uint8List(6);
-await file.readAt(0, out);
-await file.close();
+  final out = Uint8List(6);
+  await file.readAt(0, out);
+} finally {
+  await file.close();
+}
 ```
 
-### mmap and isolate pool
+`openBytesFile` is the portable async API. The synchronous companion lives in
+`package:blit/bytes_ffi.dart` for native-only code.
+
+## Native engines
+
+Import native-only APIs from `package:blit/bytes_ffi.dart`.
+
+### mmap
 
 ```dart
-import 'package:blit/bytes_ffi.dart';
-
 final file = openMmapFileSync('/tmp/sparse.bin');
 file.truncate(32 << 30); // sparse by default on Windows
 final region = file.map(offset: 30 << 30, length: 1 << 20);
+
 region.bytes[0] = 42;
+region.prefetch(offset: 0, length: 1 << 20);
 region.flush();
 region.close();
 file.close();
-
-final pool = await ParallelBytesFile.open('/tmp/data.bin', maxWorkers: 8);
-final chunks = await pool.readMany([0, 1 << 20, 2 << 20], 4096);
-await pool.close();
 ```
 
-Mapped windows expose `prefetch()` / `discard()` hints:
+Mapped windows support `prefetch()` / `discard()` hints. File-level helpers
+include `punchHole` (Windows/Linux), `cloneRangeFrom` (Windows), `preallocate`
+and `adviseRead` (macOS), and `cloneFileSync` (macOS `clonefile`, copy
+fallback). Unsupported filesystems throw; fall back to `zeroize` or a copy.
 
-```dart
-region.prefetch(offset: 0, length: 1 << 20); // WILLNEED / PrefetchVirtualMemory
-region.discard(offset: 0, length: 1 << 20);  // DONTNEED (Windows no-op for file maps)
-```
-
-File-level allocation/copy helpers:
-
-```dart
-file.punchHole(4096, 4096);               // Windows/Linux: deallocate extents
-file.cloneRangeFrom(src, length: 1 << 20); // Windows: block clone (if supported)
-file.preallocate(32 << 30);                // macOS F_PREALLOCATE
-file.adviseRead(offset: 0, length: 1 << 20); // macOS F_RDADVISE
-
-cloneFileSync('/tmp/a.bin', '/tmp/b.bin'); // macOS APFS clonefile; copy elsewhere
-```
-
-`punchHole`/`cloneRangeFrom` are best-effort: unsupported filesystems throw
-`UnsupportedError`/`WindowsException`, so fall back to `zeroize` or copy.
-
-Use `maxQueue` to bound queued + in-flight work:
+### Isolate pool
 
 ```dart
 final pool = await ParallelBytesFile.open(
@@ -167,47 +132,19 @@ final pool = await ParallelBytesFile.open(
   maxWorkers: 8,
   maxQueue: 64,
 );
+
+final chunks = await pool.readMany([0, 1 << 20, 2 << 20], 4096);
+await pool.close();
 ```
 
-Windows 10 1803+ can reserve a replaceable placeholder window with
-`MapViewOfFile3`, which avoids unmap/remap gaps for window managers:
+`maxQueue` bounds queued + in-flight work. `readMany` merges exactly adjacent
+ranges. Read-only files up to `mmapReadCacheLimit` (default 1 GiB) are mapped
+once per worker for hot random reads; set the limit to `0` to disable. Mapping
+is virtual: cold pages still fault from disk.
 
-```dart
-final placeholder = file.createPlaceholder(1 << 20);
-final view = placeholder.map(otherFile); // replaces the current view
-view.close();
-placeholder.close();
-```
+### Windows
 
-`readMany` merges exactly adjacent ranges (one syscall per sequential run).
-For `readOnly: true` files up to `mmapReadCacheLimit` (default 1 GiB), each
-worker maps the whole file once and serves reads from memory; hot random reads
-skip the per-block `ReadFile`/`pread`. Set the limit to `0` to disable, or raise
-it for a hot file that fits comfortably in the address space. Mapping is
-virtual: cold pages still fault from disk.
-
-For streaming files larger than RAM, open with `direct: true` (Windows
-`FILE_FLAG_NO_BUFFERING`, Linux/Android `O_DIRECT`, macOS/iOS `F_NOCACHE`).
-Offsets and lengths must be 4 KiB aligned; direct I/O bypasses the page cache
-and is intended for sequential copy/import/export, not 4 KiB random access:
-
-```dart
-final stream = openMmapFileSync('/tmp/big.bin', direct: true);
-final chunk = Uint8List(8 << 20); // 4 KiB aligned length
-stream.readAt(0, chunk);
-stream.writeAt(0, chunk);
-stream.close();
-```
-
-`ParallelBytesFile.open(..., direct: true)` uses the same direct engine in its
-workers. On 4K random reads direct I/O is much slower than buffered/mmap
-(measured ~7k vs ~175k IOPS on 8 GiB); use it only for aligned streaming.
-
-On Windows, `largePages: true` asks for `MEM_LARGE_PAGES` scratch buffers for
-direct I/O. It needs `SeLockMemoryPrivilege`; without it the allocator falls
-back to normal pages and `file.usesLargePages` stays `false`:
-
-`IocpFile` (Windows) is available for a single worker that wants deeper queue:
+`IocpFile` exposes overlapped I/O with queue depth 1–128:
 
 ```dart
 final f = IocpFile.openSync('/tmp/data.bin', queueDepth: 32);
@@ -215,9 +152,23 @@ final data = f.readManySync(offsets, 4096);
 f.close();
 ```
 
-`UringBytesFile` (Linux) uses `package:io_uring`'s raw SQ/CQ rings. Use the
-batch methods for queue depth; a single 4 KiB read is usually better on the
-buffered/mmap path:
+`MapViewOfFile3` placeholders can swap mapped windows without an unmap/remap
+gap:
+
+```dart
+final placeholder = file.createPlaceholder(1 << 20);
+final view = placeholder.map(otherFile);
+view.close();
+placeholder.close();
+```
+
+Direct I/O uses `FILE_FLAG_NO_BUFFERING`; `largePages: true` opts into
+`MEM_LARGE_PAGES` scratch buffers when `SeLockMemoryPrivilege` is available.
+
+### Linux io_uring
+
+`UringBytesFile` is a pure-Dart `io_uring` backend built on `package:io_uring`.
+Use the batch methods for queue depth:
 
 ```dart
 final f = await openUringBytesFile('/tmp/data.bin', entries: 64);
@@ -230,60 +181,80 @@ try {
 }
 ```
 
-`entries` must be at least the batch size. The backend is Linux-only; other
-platforms throw `UnsupportedError`.
+`entries` must be at least the batch size. The backend is Linux-only.
 
-## 32 GiB semantics
+### Direct I/O
 
-Three different things are often conflated:
+For streaming files larger than RAM, open with `direct: true` (Windows
+`FILE_FLAG_NO_BUFFERING`, Linux/Android `O_DIRECT`, macOS/iOS `F_NOCACHE`).
+Offsets and lengths must be 4 KiB aligned. Direct I/O is intended for
+sequential copy/import/export, not 4 KiB random access.
 
-| Meaning | Cost | Implementation |
-|---|---|---|
-| 32 GiB logical length | metadata-only | `truncate(32 << 30)` |
-| 32 GiB sparse file | metadata until written | Windows `FSCTL_SET_SPARSE`; POSIX `ftruncate` |
-| 32 GiB real data | disk/cache-bound | write what you need; no 32 GiB allocation |
+## Web backend
 
-On Windows, a non-sparse `truncate(32 GiB)` followed by a write at 30 GiB
-zero-fills the gap (measured ~19 s). `MmapFile.truncate(..., sparse: true)` is
-the default and avoids it. On Web, a single 32 GiB OPFS file has the same
-zero-fill cost; the backend stores 16 MiB chunks plus a manifest instead.
+```dart
+final file = await openBytesFile('data/big.bin');
+await file.writeAt(0, header);
+await file.flush();
+```
+
+On Web, `BytesFile` is backed by OPFS chunk files and a double-slot manifest.
+Logical length is metadata-only until data is written, so large sparse files do
+not zero-fill the whole range.
+
+OPFS sync handles are dedicated-worker-only and exclusive per file. Chunks are
+distributed across a small worker pool; one logical file serializes its writes
+so the manifest stays single-writer. In a cross-origin-isolated page
+(`COOP: same-origin` + `COEP: require-corp`), small reads/writes use a
+`SharedArrayBuffer` ring; larger payloads and non-isolated pages fall back to
+postMessage transfer.
+
+## Platform support
+
+| Capability | Windows | Linux | macOS | Android | iOS | Web |
+|---|---|---|---|---|---|---|
+| `Bytes` / `BytesMut` / `Uint64` | ✅ | ✅ | ✅ | ✅* | ✅* | ✅ |
+| `BytesFile` (`dart:io`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
+| mmap (`bytes_ffi.dart`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
+| `IocpFile` | ✅ | — | — | — | — | — |
+| `UringBytesFile` | — | ✅ | — | — | — | — |
+| `ParallelBytesFile` | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
+| OPFS backend | — | — | — | — | — | ✅ |
+
+`*` Android/iOS are not built or run by CI; the pure-Dart core is portable, but
+mobile file paths are unverified. CI covers Dart on Ubuntu/macOS/Windows and
+Chrome on Ubuntu.
+
+## Large and sparse files
+
+| Meaning | Cost |
+|---|---|
+| Large logical length | metadata-only (`truncate`) |
+| Large sparse file | metadata until written |
+| Real data | disk/cache-bound; write only what you need |
+
+On Windows, a non-sparse `truncate(32 GiB)` followed by a far-offset write can
+zero-fill the gap. `MmapFile.truncate(..., sparse: true)` is the default and
+avoids it. OPFS uses chunk files for the same reason.
 
 ## Performance
 
-`package:benchmark_test` suite in the repository's `benchmark/` directory
-(repository-only, not in the published package; JIT/AOT, ops/sec + RME).
-Local Windows x64, UMIS NVMe SSD, 32 logical CPUs, 16.6 GB RAM, Dart 3.13.5:
+The benchmark card above is generated from the `benchmark/` suite with
+[`bench-svg`](https://github.com/unk-404/benchmark_svg). Raw JSONL/SVG artifacts
+are produced by CI; the chart is deterministic and reflects the latest default
+branch run.
 
-| Workload | Result |
-|---|---:|
-| Sequential read 1 GiB (8 MiB blocks, cached) | 7.71 GiB/s |
-| Sequential write 1 GiB (8 MiB blocks, cached) | 4.55 GiB/s |
-| Direct streaming write 1 GiB (`NO_BUFFERING`) | 1.9 GiB/s |
-| Direct streaming read 1 GiB (`NO_BUFFERING`) | 2.7 GiB/s |
-| 32 GiB streaming read, buffered | 2.2 GiB/s |
-| 32 GiB streaming read, direct | **3.1 GiB/s** |
-| 32 GiB streaming write, buffered | 0.87 GiB/s |
-| 32 GiB streaming write, direct | **1.15 GiB/s** |
-| 32 GiB 4K random pread | 7.35k IOPS / 28.7 MiB/s |
-| 32 GiB 4K random pwrite | 95.6k IOPS / 373 MiB/s (buffered) |
-| 32 GiB 4K random mmap read (cold) | 5.0k IOPS / 19.5 MiB/s |
-| `IocpFile` 4K read, single worker QD32 (1 GiB warm) | 93k–112k IOPS (JIT), ~138k (AOT) |
-| Isolate pool 4K read, 16 workers (1 GiB warm, mmap cache) | **926k IOPS / 3.5 GiB/s** |
-| Isolate pool 4K read, 16 workers (32 GiB cold) | 106.7k IOPS / 417 MiB/s |
-| Isolate pool 4K read, 4 workers (1 GiB warm, mmap cache) | 732k IOPS / 2.8 GiB/s |
-| Isolate pool 4K sequential readMany, 4 workers (1 GiB warm) | 536k IOPS / 2.1 GiB/s |
-
-4K cold random is QD1 disk-latency-bound; the pool hides it with worker
-concurrency. `pwrite` numbers are page-cache writes, not durability. mmap cold
-random pays page faults; hot/repeated access is memory-speed.
+Random 4 KiB I/O is latency-bound; the isolate pool hides it with concurrency.
+mmap pays page faults on cold random access but is memory-speed once hot.
+`pwrite` numbers are page-cache writes, not durability.
 
 ## Examples
 
-- [`example/bytes_example.dart`](example/bytes_example.dart): zero-copy, encoding and native file I/O.
+- [`example/bytes_example.dart`](example/bytes_example.dart): core APIs and native file I/O.
 - [`example/bytes_web_example.dart`](example/bytes_web_example.dart): Web-safe core for dart2js/dart2wasm.
-- [`flutter_example/`](https://github.com/unk-404/dart_blit/tree/master/flutter_example): Flutter app and widget test using `blit` (repository-only, not in the pub package).
+- [`flutter_example/`](https://github.com/unk-404/dart_blit/tree/master/flutter_example): repository-only Flutter example.
 
-## Tests and CI
+## Development
 
 ```sh
 dart pub get
@@ -292,33 +263,26 @@ dart test
 dart run example/bytes_example.dart
 ```
 
-VM tests cover bytes/Uint64 fuzz, file backends, mmap lifetime, 100k-op stress,
-isolate-pool barriers and (skipped by default) 32 GiB sparse writes. Chrome
-tests cover the OPFS backend and Web fuzz. CI runs Dart on
-Ubuntu/macOS/Windows, Chrome on Ubuntu, Flutter desktop/Web builds, and on
-push/manual runs a Windows benchmark job after all tests pass. That job renders
-`assets/benchmarks.svg` with `bench-svg` (`bench-svg.toml` + the
-`unk-404/benchmark_svg` action), uploads the JSONL + SVG artifact, and commits
-the SVG with `[skip ci]`; PR runs stop after the tests. Manual `workflow_dispatch`
-accepts `benchmark_gb` (default 4; hosted Windows runners should stay small).
-For a local 32 GiB run, use
-`BYTES_BENCH_GB=32 dart run benchmark_test benchmark/random_32g_benchmarks_test.dart`.
-The local development machine is Windows.
+Chrome tests cover OPFS and Web fuzz. CI runs Dart on Ubuntu/macOS/Windows and
+Chrome on Ubuntu. On push/manual branch runs, a Windows benchmark job renders
+the SVG with `bench-svg`, uploads JSONL/SVG artifacts and commits the chart with
+`[skip ci]`. PR runs stop after tests. `workflow_dispatch` accepts
+`benchmark_gb` and `BYTES_BENCH_GB` controls local random-file benchmarks.
 
 ## Limitations
 
 - OPFS sync handles are worker-only and exclusive per file; the Web backend is
   serialized per file. Safari/Firefox are feature-detect targets, not locally
   validated.
-- Android/iOS are **not built or run by CI**; the pure-Dart core should work,
-  but native file paths on mobile are unverified and not claimed as supported.
+- Android/iOS are not built or run by CI; native mobile file paths are
+  unverified.
 - `IocpFile` is Windows-only; cold-device behavior above 4 GiB is not locally
-  verified (Windows has no unprivileged drop-cache).
-- Zeroize is `memset`-level; no compiler-proof `SecureZeroMemory` without a C
-  shim, which this package intentionally does not require.
+  verified.
+- Zeroize is `memset`-level; there is no compiler-proof `SecureZeroMemory`
+  without a C shim.
 - `ParallelBytesFile` does not order overlapping writes; await the previous
   write or use `flush` as a barrier.
-- API is `0.x`; breaking changes may occur before `1.0`.
+- The API is pre-1.0; breaking changes may occur.
 
 ## License
 
