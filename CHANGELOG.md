@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.1.1
+
+### Added
+
+- TypedData interop: `Bytes.fromTypedData`, `TypedData.asBytes()`,
+  `Bytes.fromBytesLike`, and the `BytesLike` boundary interface; `Bytes` and
+  `BytesMut` implement `BytesLike` without copying.
+- `MmapFile.punchHole` (Windows `FSCTL_SET_ZERO_DATA`, Linux
+  `fallocate(PUNCH_HOLE)`), Windows `cloneRangeFrom`
+  (`FSCTL_DUPLICATE_EXTENTS_TO_FILE`), macOS `preallocate`
+  (`F_PREALLOCATE`) / `adviseRead` (`F_RDADVISE`), and `cloneFileSync`
+  (`clonefile` on macOS/iOS, copy fallback elsewhere).
+- Linux `UringBytesFile` / `openUringBytesFile`: pure-Dart `package:io_uring`
+  SQ/CQ rings, batched `readMany`/`writeMany`, no `liburing` or C shim.
+- Windows `MmapPlaceholder` via `VirtualAlloc2` + `MapViewOfFile3`
+  (`MEM_RESERVE_PLACEHOLDER` / `MEM_REPLACE_PLACEHOLDER`), for gap-free window
+  replacement on Windows 10 1803+.
+- Windows direct-I/O `largePages: true` opt-in (`MEM_LARGE_PAGES` scratch,
+  privilege-checked with normal-page fallback).
+- `ParallelBytesFile.maxQueue` backpressure for queued + in-flight jobs.
+- Web OPFS worker-per-chunk pool: `OpfsWorkerPool` routes chunk `i` to
+  `workers[i % N]` (default 4), keeps the manifest single-writer, and caches
+  each chunk handle in its owning worker.
+- Optional Web SAB ring for small `read`/`write` calls when
+  `crossOriginIsolated` and `Atomics.waitAsync` are available: 8 × 64 KiB
+  slots, `Atomics` wakeups, postMessage fallback for larger payloads and
+  non-isolated pages.
+- Benchmark SVG rendering now uses `bench-svg` (`bench-svg.toml` + the
+  `unk-404/benchmark_svg` action) instead of a repo-local SVG generator.
+
 ## 0.1.0
 
 First development release.

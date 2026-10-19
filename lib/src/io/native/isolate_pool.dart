@@ -36,11 +36,13 @@ final class ParallelBytesFile implements BytesFile {
   final bool useIocp;
   final bool direct;
   final int mmapReadCacheLimit;
+  final int maxQueue;
   final MmapFile _coordinator;
   final ReceivePort _replies = ReceivePort();
   final List<_Worker> _workers = <_Worker>[];
   final List<_Job> _queue = <_Job>[];
   final Map<int, _Job> _inflight = <int, _Job>{};
+  final List<Completer<void>> _queueWaiters = <Completer<void>>[];
   int _nextId = 1;
   bool _closed = false;
   bool _closing = false;
@@ -56,6 +58,7 @@ final class ParallelBytesFile implements BytesFile {
     this.useIocp,
     this.direct,
     this.mmapReadCacheLimit,
+    this.maxQueue,
     this._coordinator,
   ) {
     _replies.listen(_onReply);
@@ -72,6 +75,10 @@ final class ParallelBytesFile implements BytesFile {
   /// `F_NOCACHE`) with 4 KiB-aligned requests; use it for aligned streaming,
   /// not random access.
   ///
+  /// Bounds queued + in-flight jobs; `0` keeps the original unbounded queue.
+  /// Backpressure makes `_submit` wait for a completion instead of growing the
+  /// queue without limit.  Worker count is still CPU-derived or explicit.
+  ///
   /// With [readOnly] and a file no larger than [mmapReadCacheLimit], each
   /// worker maps the whole file read-only once and serves reads from the map
   /// (hot random reads avoid a `ReadFile`/`pread` syscall per block).  Set the
@@ -85,6 +92,7 @@ final class ParallelBytesFile implements BytesFile {
     bool useIocp = false,
     bool direct = false,
     int mmapReadCacheLimit = 1 << 30,
+    int maxQueue = 0,
   }) async {
     if (useIocp && direct) {
       throw ArgumentError('useIocp and direct are mutually exclusive');
@@ -95,6 +103,7 @@ final class ParallelBytesFile implements BytesFile {
     if (mmapReadCacheLimit < 0) {
       throw RangeError.value(mmapReadCacheLimit, 'mmapReadCacheLimit');
     }
+    if (maxQueue < 0) throw RangeError.value(maxQueue, 'maxQueue');
     final coordinator =
         openMmapFileSync(path, create: create, readOnly: readOnly);
     final pool = ParallelBytesFile._(
@@ -104,6 +113,7 @@ final class ParallelBytesFile implements BytesFile {
       useIocp,
       direct,
       mmapReadCacheLimit,
+      maxQueue,
       coordinator,
     );
     try {
@@ -154,6 +164,7 @@ final class ParallelBytesFile implements BytesFile {
     final id = message[0] as int;
     final job = _inflight.remove(id);
     if (job == null) return;
+    _releaseQueueSlot();
     final payload = message[1];
     final error = message.length > 2 ? message[2] : null;
     final worker = _workers[job.workerIndex];
@@ -180,6 +191,17 @@ final class ParallelBytesFile implements BytesFile {
         }
       }
       worker.busy = false;
+    }
+    _releaseQueueSlot();
+  }
+
+  void _releaseQueueSlot() {
+    if (maxQueue <= 0 || _queueWaiters.isEmpty) return;
+    var slots = maxQueue - (_queue.length + _inflight.length);
+    while (slots > 0 && _queueWaiters.isNotEmpty) {
+      final waiter = _queueWaiters.removeAt(0);
+      if (!waiter.isCompleted) waiter.complete();
+      slots--;
     }
   }
 
@@ -258,9 +280,19 @@ final class ParallelBytesFile implements BytesFile {
     return result;
   }
 
-  Future<Object?> _submit(String op, Map<String, Object?> args) {
+  Future<Object?> _submit(String op, Map<String, Object?> args) async {
     if (_closed || _closing) {
       return Future<Object?>.error(StateError('File is closed: $path'));
+    }
+    if (maxQueue > 0) {
+      while (_queue.length + _inflight.length >= maxQueue) {
+        if (_closed || _closing) {
+          return Future<Object?>.error(StateError('File is closed: $path'));
+        }
+        final waiter = Completer<void>();
+        _queueWaiters.add(waiter);
+        await waiter.future;
+      }
     }
     final id = _nextId++;
     final job = _Job(id, op, args);
@@ -484,6 +516,13 @@ final class ParallelBytesFile implements BytesFile {
     _workers.clear();
     _queue.clear();
     _inflight.clear();
+    final waiters = _queueWaiters.toList(growable: false);
+    _queueWaiters.clear();
+    for (final waiter in waiters) {
+      if (!waiter.isCompleted) {
+        waiter.completeError(StateError('File is closed: $path'));
+      }
+    }
   }
 
   @override

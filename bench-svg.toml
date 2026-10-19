@@ -1,0 +1,91 @@
+# Rendered by bench-svg (https://github.com/unk-404/benchmark_svg).
+# CI passes --font-file assets/fonts/MPLUSRounded1c-Regular.ttf.
+[render]
+title = "blit benchmarks"
+subtitle = "{os|local} · {tool} · {commit:short|local}"
+footer = "Generated from {rows} rows"
+width = 920
+min_height = 0
+max_rows = 13
+only_matched = true
+kaomoji = "(◕‿◕)♡"
+
+# File I/O (1 GiB file).
+[[row]]
+id = "file.read.8MiB"
+label = "Sequential read"
+note = "8 MiB blocks · 1 GiB file"
+unit = "GiB/s"
+value = "value * 8 / 1024"
+group = "File I/O"
+
+[[row]]
+id = "file.write.8MiB"
+label = "Sequential write"
+note = "8 MiB blocks · 1 GiB file"
+unit = "GiB/s"
+value = "value * 8 / 1024"
+group = "File I/O"
+
+[[row]]
+id = "file.read.random4K"
+label = "Random pread"
+note = "4 KiB · 1 GiB file"
+unit = "IOPS"
+group = "File I/O"
+
+[[row]]
+id = "file.write.random4K"
+label = "Random pwrite"
+note = "4 KiB · 1 GiB file · buffered"
+unit = "IOPS"
+group = "File I/O"
+
+# Isolate pool.
+[[row]]
+match = 'pool\.read\.random4K\.w(\d+)$'
+label = "Pool read · $1 workers"
+note = "4 KiB · batch 32"
+unit = "IOPS"
+value = "value * $1 * 32"
+group = "Worker pool"
+
+[[row]]
+match = 'pool\.read\.sequential4K\.w(\d+)$'
+label = "Pool sequential"
+note = "4 KiB · $1 workers · coalesced"
+unit = "IOPS"
+value = "value * 32"
+group = "Worker pool"
+
+# Large random file (random4g/random8g...).
+[[row]]
+match = 'random(\d+)g\.pread\.read\.random4K$'
+label = "Random pread"
+note = "4 KiB · $1 GiB file"
+unit = "IOPS"
+group = "Large file"
+
+[[row]]
+match = 'random(\d+)g\.pwrite\.write\.random4K$'
+label = "Random pwrite"
+note = "4 KiB · $1 GiB file · buffered"
+unit = "IOPS"
+group = "Large file"
+
+# IOCP QD32.
+[[row]]
+id = "iocp.read.random4K.qd32"
+label = "IOCP read · QD32"
+note = "4 KiB · single worker"
+unit = "IOPS"
+value = "value * 32"
+group = "IOCP"
+
+[[row]]
+id = "iocp.write.random4K.qd32"
+label = "IOCP write · QD32"
+note = "4 KiB · single worker · buffered"
+unit = "IOPS"
+value = "value * 32"
+group = "IOCP"

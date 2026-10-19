@@ -28,6 +28,8 @@
 /// * One instance per logical path: OPFS sync handles take an exclusive lock.
 /// * `flush()`/`close()` persist the manifest; a page crash loses unflushed
 ///   manifest updates (chunk bytes written but not referenced read as zeros).
+/// * `SharedArrayBuffer` acceleration requires `COOP: same-origin` +
+///   `COEP: require-corp`; non-isolated pages transparently use postMessage.
 /// * Quota is not pre-checked; `QuotaExceededError` surfaces as
 ///   [WebQuotaExceededException].
 library;
@@ -53,6 +55,7 @@ export 'chunk_layout.dart'
         storePathFor;
 export 'errors.dart';
 export 'manifest.dart' show WebFileManifest;
+export 'opfs_client.dart' show OpfsWorkerPool;
 export 'web_bytes_file.dart' show WebOpfsBytesFile;
 
 /// Opens (or creates) a logical file backed by OPFS chunks.
@@ -62,6 +65,8 @@ export 'web_bytes_file.dart' show WebOpfsBytesFile;
 /// * [readOnly]: rejects every mutating call with a [StateError].
 /// * [chunkSize]: only used when the file is created; existing files keep the
 ///   chunk size recorded in their manifest.  Defaults to 16 MiB.
+/// * [workers]: chunk workers in the page-wide pool; the first open wins.
+///   Defaults to [OpfsWorkerPool.defaultWorkers].
 ///
 /// Throws [UnsupportedError] when the browser has no OPFS / worker sync handle,
 /// [WebFileSystemException] with `NotFoundError` when [create] is false and the
@@ -71,12 +76,14 @@ Future<BytesFile> openOpfsBytesFile(
   bool create = true,
   bool readOnly = false,
   int chunkSize = kDefaultChunkSize,
+  int? workers,
 }) {
   return WebOpfsBytesFile.open(
     path,
     create: create,
     readOnly: readOnly,
     chunkSize: chunkSize,
+    workers: workers,
   );
 }
 
@@ -87,12 +94,14 @@ Future<WebOpfsBytesFile> openOpfsBytesFileTyped(
   bool create = true,
   bool readOnly = false,
   int chunkSize = kDefaultChunkSize,
+  int? workers,
 }) {
   return WebOpfsBytesFile.open(
     path,
     create: create,
     readOnly: readOnly,
     chunkSize: chunkSize,
+    workers: workers,
   );
 }
 
@@ -103,8 +112,8 @@ Future<WebOpfsBytesFile> openOpfsBytesFileTyped(
 /// have a handle.
 Future<void> deleteOpfsFile(String path) async {
   final normalized = normalizeLogicalPath(path);
-  final client = await OpfsWorkerClient.instance();
-  await client.remove(storePathFor(normalized), recursive: true);
+  final pool = await OpfsWorkerPool.instance();
+  await pool.manifest.remove(storePathFor(normalized), recursive: true);
 }
 
 /// Lists entry names of an OPFS directory (diagnostics/tests).
@@ -112,8 +121,8 @@ Future<void> deleteOpfsFile(String path) async {
 /// Throws [WebFileSystemException] with `NotFoundError` when [path] is not an
 /// existing directory.
 Future<List<String>> listOpfsDirectory(String path) async {
-  final client = await OpfsWorkerClient.instance();
-  return client.list(path);
+  final pool = await OpfsWorkerPool.instance();
+  return pool.manifest.list(path);
 }
 
 /// Reads and decodes the newest valid manifest for [path] (`null` if none).
@@ -127,7 +136,7 @@ Future<WebFileManifest?> readWebFileManifest(String path) =>
 ///
 /// Mostly useful for tests and hot-restart style teardown; subsequent opens
 /// start a fresh worker.
-void shutdownWebBackend() => OpfsWorkerClient.shutdownShared();
+void shutdownWebBackend() => OpfsWorkerPool.shutdownShared();
 
 /// Conservative default chunk size for mobile (iOS memory pressure).
 const int kMobileChunkSize = 8 * 1024 * 1024;

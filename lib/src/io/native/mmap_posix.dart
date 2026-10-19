@@ -94,6 +94,35 @@ typedef _PosixMemalignNative = Int32 Function(
     Pointer<Pointer<Void>>, Size, Size);
 typedef _PosixMemalign = int Function(Pointer<Pointer<Void>>, int, int);
 
+typedef _ClonefileNative = Int32 Function(
+    Pointer<Utf8>, Pointer<Utf8>, Int32);
+typedef _Clonefile = int Function(Pointer<Utf8>, Pointer<Utf8>, int);
+
+final class _Fstore extends Struct {
+  @Uint32()
+  external int fstFlags;
+
+  @Int32()
+  external int fstPosmode;
+
+  @Int64()
+  external int fstOffset;
+
+  @Int64()
+  external int fstLength;
+
+  @Int64()
+  external int fstBytesalloc;
+}
+
+final class _Radvisory extends Struct {
+  @Int64()
+  external int raOffset;
+
+  @Int32()
+  external int raCount;
+}
+
 typedef _ErrnoNative = Pointer<Int32> Function();
 typedef _Errno = Pointer<Int32> Function();
 
@@ -148,6 +177,14 @@ const int _eintr = 4;
 
 // fcntl.h
 const int _fGetfl = 3;
+const int _fPreallocate = 42;
+const int _fRdadvise = 44;
+const int _fAllocateAll = 0x4;
+const int _fPeofPosmode = 3;
+
+// linux/falloc.h
+const int _fallocKeepSize = 0x01;
+const int _fallocPunchHole = 0x02;
 
 // linux/falloc.h — only used on Linux/Android when `fallocate` is exported.
 const int _fallocDefault = 0; // equivalent to posix_fallocate()'s mode
@@ -258,6 +295,7 @@ class _Libc {
   late final _Strerror strerror;
   late final _Memset memset;
   late final _PosixMemalign posixMemalign;
+  late final _Clonefile? clonefile;
   late final int pageSize;
 
   _Libc._(DynamicLibrary lib) {
@@ -312,6 +350,8 @@ class _Libc {
     memset = lib.lookupFunction<_MemsetNative, _Memset>('memset');
     posixMemalign = lib.lookupFunction<_PosixMemalignNative, _PosixMemalign>(
         'posix_memalign');
+    clonefile = _tryNative<_ClonefileNative>(lib, 'clonefile')
+        ?.asFunction<_Clonefile>();
     strerror = lib.lookupFunction<_StrerrorNative, _Strerror>('strerror');
 
     _errnoFn = _isDarwin
@@ -722,6 +762,86 @@ final class PosixMmapFile extends MmapFile {
   }
 
   @override
+  void punchHole(int offset, int length) {
+    _checkWritable();
+    _size = _querySize();
+    if (offset < 0 || length < 0 || length > _size - offset) {
+      throw RangeError('punchHole range out of bounds');
+    }
+    if (length == 0) return;
+    final fallocate = _libc.fallocate;
+    if (_isDarwin || fallocate == null) {
+      throw UnsupportedError('punchHole is not supported on this platform');
+    }
+    final rc = fallocate(
+        _fd, _fallocKeepSize | _fallocPunchHole, offset, length);
+    if (rc < 0) throw PosixException('fallocate(PUNCH_HOLE)', _libc.errno, path);
+    _size = _querySize();
+  }
+
+  @override
+  void cloneRangeFrom(
+    MmapFile source, {
+    int sourceOffset = 0,
+    int destOffset = 0,
+    int? length,
+  }) {
+    throw UnsupportedError(
+        'cloneRangeFrom requires filesystem-specific support; use copy');
+  }
+
+  @override
+  void preallocate(int length) {
+    _checkWritable();
+    if (length < 0) throw RangeError.value(length, 'length');
+    if (!_isDarwin) {
+      truncate(length, sparse: false);
+      return;
+    }
+    final store = calloc<_Fstore>();
+    try {
+      store.ref.fstFlags = _fAllocateAll;
+      store.ref.fstPosmode = _fPeofPosmode;
+      store.ref.fstOffset = 0;
+      store.ref.fstLength = length;
+      final rc = _libc.fcntl(_fd, _fPreallocate, store.address);
+      if (rc < 0) {
+        throw PosixException('fcntl(F_PREALLOCATE)', _libc.errno, path);
+      }
+    } finally {
+      calloc.free(store);
+    }
+    truncate(length, sparse: false);
+  }
+
+  @override
+  void adviseRead({int offset = 0, int? length}) {
+    _checkOpen();
+    _size = _querySize();
+    if (!_isDarwin) return;
+    final total = length ?? (_size - offset);
+    if (offset < 0 || total < 0 || total > _size - offset) {
+      throw RangeError('adviseRead range out of bounds');
+    }
+    var done = 0;
+    while (done < total) {
+      final n = math.min(total - done, 1 << 30);
+      final advice = calloc<_Radvisory>();
+      try {
+        advice.ref.raOffset = offset + done;
+        advice.ref.raCount = n;
+        final rc = _libc.fcntl(_fd, _fRdadvise, advice.address);
+        if (rc < 0) {
+          throw PosixException('fcntl(F_RDADVISE)', _libc.errno, path);
+        }
+      } finally {
+        calloc.free(advice);
+      }
+      done += n;
+    }
+  }
+
+  @override
   void close() {
     if (_closed) return;
     _closed = true;
@@ -734,6 +854,32 @@ final class PosixMmapFile extends MmapFile {
   String toString() => 'PosixMmapFile($path, size: $_size, '
       'readOnly: $readOnly, '
       'flags: 0x${_statusFlags.toRadixString(16)})';
+}
+
+/// macOS/iOS `clonefile(2)`; throws when the syscall is unavailable.
+void posixCloneFileSync(String source, String dest, {bool overwrite = false}) {
+  if (!_isDarwin) {
+    throw UnsupportedError('clonefile is only available on macOS/iOS');
+  }
+  final clone = _posixLibc.clonefile;
+  if (clone == null) {
+    throw UnsupportedError('clonefile is not exported by libSystem');
+  }
+  if (overwrite) {
+    final old = File(dest);
+    if (old.existsSync()) old.deleteSync();
+  }
+  final src = source.toNativeUtf8();
+  final dst = dest.toNativeUtf8();
+  try {
+    final rc = clone(src, dst, 0);
+    if (rc < 0) {
+      throw PosixException('clonefile', _posixLibc.errno, source);
+    }
+  } finally {
+    malloc.free(src);
+    malloc.free(dst);
+  }
 }
 
 /// A zero-copy window returned by [PosixMmapFile.map].

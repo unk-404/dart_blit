@@ -9,10 +9,11 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'bytes_like.dart';
 import 'u64/uint64.dart';
 
 /// Immutable view over `[offset, offset + length)` of a `Uint8List`.
-final class Bytes implements Comparable<Bytes> {
+final class Bytes implements Comparable<Bytes>, BytesLike {
   final Uint8List _buffer;
   final int _offset;
   final int _length;
@@ -53,6 +54,28 @@ final class Bytes implements Comparable<Bytes> {
     return Bytes._(view, 0, view.length);
   }
 
+  /// Zero-copy view over any Dart [TypedData].
+  ///
+  /// Covers `Uint8List`, `ByteData`, `Int32List`, etc.  The view shares the
+  /// underlying [ByteBuffer]; later mutation of the backing storage is visible
+  /// through this [Bytes].
+  factory Bytes.fromTypedData(TypedData data) {
+    final view = Uint8List.view(
+      data.buffer,
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
+    return Bytes._(view, 0, view.length);
+  }
+
+  /// Zero-copy conversion from a [BytesLike] implementation.
+  ///
+  /// If [data] is already a [Bytes], the same instance is returned.
+  factory Bytes.fromBytesLike(BytesLike data) {
+    if (data is Bytes) return data;
+    return Bytes.fromUint8List(data.asUint8List());
+  }
+
   /// Copies a range of [data].
   factory Bytes.copyOf(Uint8List data, [int start = 0, int? end]) {
     final e = end ?? data.length;
@@ -60,11 +83,13 @@ final class Bytes implements Comparable<Bytes> {
     return Bytes._(Uint8List.fromList(data.sublist(start, e)), 0, e - start);
   }
 
+  @override
   int get length => _length;
   bool get isEmpty => _length == 0;
   bool get isNotEmpty => _length != 0;
 
   /// Zero-copy mutable view.  Mutating it mutates the underlying buffer.
+  @override
   Uint8List asUint8List() =>
       Uint8List.sublistView(_buffer, _offset, _offset + _length);
 

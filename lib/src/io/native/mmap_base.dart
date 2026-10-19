@@ -58,6 +58,16 @@ abstract class MmapFile {
   bool get readOnly;
   bool get isClosed;
 
+  /// Whether large pages are active for this file's direct-I/O scratch buffer.
+  bool get usesLargePages => false;
+
+  /// Creates a reserved placeholder window that can atomically receive mapped
+  /// views via `MapViewOfFile3(MEM_REPLACE_PLACEHOLDER)`.
+  ///
+  /// Windows-only today; other platforms throw [UnsupportedError].
+  MmapPlaceholder createPlaceholder(int length) =>
+      throw UnsupportedError('placeholders are not supported on this platform');
+
   /// Current logical file length in bytes.
   int get length;
 
@@ -83,6 +93,38 @@ abstract class MmapFile {
 
   /// Overwrites `[offset, offset + length)` with zeros.
   void zeroize(int offset, int length);
+
+  /// Deallocates `[offset, offset + length)` without writing zeros.
+  ///
+  /// Windows: `FSCTL_SET_ZERO_DATA`; Linux/Android: `fallocate(PUNCH_HOLE)`.
+  /// Unsupported platforms throw [UnsupportedError]; callers can fall back to
+  /// [zeroize].
+  void punchHole(int offset, int length) =>
+      throw UnsupportedError('punchHole is not supported on this platform');
+
+  /// Clones extents from [source] into this file.
+  ///
+  /// Windows: `FSCTL_DUPLICATE_EXTENTS_TO_FILE` (same volume, aligned ranges).
+  /// The default throws [UnsupportedError]; callers can fall back to
+  /// `readAt`/`writeAt`.
+  void cloneRangeFrom(
+    MmapFile source, {
+    int sourceOffset = 0,
+    int destOffset = 0,
+    int? length,
+  }) =>
+      throw UnsupportedError('cloneRangeFrom is not supported on this platform');
+
+  /// Preallocates physical space for at least [length] bytes.
+  ///
+  /// macOS uses `F_PREALLOCATE`; the default extends the file with [truncate],
+  /// which may zero-fill.
+  void preallocate(int length) => truncate(length);
+
+  /// Kernel read-ahead hint for `[offset, offset + length)`.
+  ///
+  /// macOS uses `F_RDADVISE`; other platforms may no-op.
+  void adviseRead({int offset = 0, int? length}) {}
 
   /// Closes all windows, the mapping and the file handle; idempotent.
   void close();
@@ -110,4 +152,17 @@ abstract class MmapFile {
       zeroize(offset, length);
 
   Future<void> closeAsync() async => close();
+}
+
+/// A reserved address range that can be filled/replaced with mapped windows.
+abstract interface class MmapPlaceholder {
+  int get length;
+  int get baseAddress;
+
+  /// Maps [file]'s `[offset, offset + length)` into this placeholder.
+  MappedRegion map(MmapFile file,
+      {int offset = 0, bool writable = true});
+
+  /// Releases the placeholder and its current view; idempotent.
+  void close();
 }

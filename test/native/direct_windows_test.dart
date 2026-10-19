@@ -40,9 +40,24 @@ void main() {
     }
   });
 
-  test('direct I/O rejects unaligned access and mmap', () {
-    final file = openMmapFileSync(path, direct: true);
+  test('direct I/O largePages opt-in falls back safely', () {
+    final file = openMmapFileSync(path, direct: true, largePages: true);
     try {
+      file.truncate(1 << 20);
+      final src = Uint8List(1 << 20)..fillRange(0, 1 << 20, 0x42);
+      expect(file.writeAt(0, src), 1 << 20);
+      final dst = Uint8List(1 << 20);
+      expect(file.readAt(0, dst), 1 << 20);
+      expect(dst, src);
+      // Privilege-dependent; fallback must still be correct.
+      expect(file.usesLargePages, anyOf(isTrue, isFalse));
+    } finally {
+      file.close();
+    }
+  });
+
+  test('direct I/O rejects unaligned access and mmap', () {
+    final file = openMmapFileSync(path, direct: true);    try {
       file.truncate(1 << 20);
       expect(
         () => file.writeAt(1, Uint8List(4096)),

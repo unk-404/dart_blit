@@ -9,20 +9,22 @@ Web I/O uses OPFS chunk files and a dedicated worker.
 ## Features
 
 - **Zero-copy `Bytes`**: `(buffer, offset, length)` views; `slice`/`sublist` are O(1).
+- **TypedData compat**: `Bytes.fromTypedData` / `TypedData.asBytes()` wrap `Uint8List`, `ByteData`, `ByteBuffer`, `Int32List`, etc. without copying; `BytesLike` is a small boundary interface for other byte libraries.
 - **`BytesMut`**: growable buffer; `freeze()`/`splitTo()`/`splitOff()` return zero-copy views with copy-on-write on later mutation.
 - **`Uint64`**: exact unsigned 64-bit values as two 32-bit limbs; works on VM, dart2js and dart2wasm without `Uint64List`/`ByteData.getUint64`.
 - **`BytesReader` / `BytesWriter`**: Rust `Buf`/`BufMut`-style fixed-width reads/writes, big-endian by default.
 - **`BytesFile`**: async random-access interface; native `dart:io` backend plus sync API.
 - **Native mmap engine** (`package:blit/bytes_ffi.dart`): `CreateFileMappingW`/`MapViewOfFile` on Windows, `mmap`/`pread`/`pwrite` on POSIX; sparse files, 64 KiB windows, zeroize.
 - **Windows IOCP engine** `IocpFile`: overlapped I/O + completion port, QD 1–128 for a single worker.
+- **Linux io_uring engine** `UringBytesFile`: pure-Dart SQ/CQ rings over raw syscalls, batched `readMany`/`writeMany`, no `liburing` or C shim (depends on `package:io_uring`).
 - **`ParallelBytesFile`**: native isolate worker pool + FIFO queue + watermark barriers; batch 32; `readMany`/`writeMany`; default `min(32, max(2, cpus-1))` workers; read-only mmap cache for hot files up to 1 GiB.
-- **Web OPFS backend**: chunk files + double-slot manifest + dedicated worker; 32 GiB logical files are metadata-only until written.
+- **Web OPFS backend**: chunk files + double-slot manifest + a worker pool; chunk `i` is served by `workers[i % N]`, the manifest has one writer, and 32 GiB logical files are metadata-only until written.
 - **Hand-written Web bindings**: only `dart:js_interop` declarations for `Worker`, `Blob`, `URL` and `navigator.storage`; no `package:web` dependency.
 
 No C compiler, native assets or `flutter config --enable-native-assets` is
 required. The only native code is the operating system's own I/O API, reached
-through `dart:ffi`; the only runtime dependency is `package:ffi` (for
-`toNativeUtf16`/`calloc`).
+through `dart:ffi`; runtime dependencies are `package:ffi` and the pure-Dart
+`package:io_uring` (Linux ring backend).
 
 ## Platform support
 
@@ -32,6 +34,7 @@ through `dart:ffi`; the only runtime dependency is `package:ffi` (for
 | `BytesFile` (`dart:io`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
 | Native mmap (`bytes_ffi.dart`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
 | `IocpFile` | ✅ | — | — | — | — | — |
+| `UringBytesFile` | — | ✅ | — | — | — | — |
 | `ParallelBytesFile` | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
 | OPFS backend | — | — | — | — | — | ✅ |
 
@@ -39,7 +42,11 @@ through `dart:ffi`; the only runtime dependency is `package:ffi` (for
 platform-independent, but mobile file paths are **unverified**. CI covers
 Dart on Ubuntu/macOS/Windows, Chrome on Ubuntu, and Flutter desktop/Web only.
 OPFS `createSyncAccessHandle` is dedicated-worker-only, takes an exclusive lock
-per file, and Web file backends are serialized per file (no parallel pool).
+per file. Chunks are distributed across a small worker pool, while writes to one
+logical file are still serialized so the manifest stays single-writer. In a
+cross-origin-isolated page (`COOP: same-origin` + `COEP: require-corp`), small
+`read`/`write` calls use a `SharedArrayBuffer` ring (8 × 64 KiB slots); larger
+payloads and non-isolated pages fall back to postMessage transfer.
 
 ## Install
 
@@ -65,6 +72,24 @@ final slice = bytes.slice(1, 3); // O(1), shares backing
 backing[1] = 99;
 print(slice[0]); // 99
 ```
+
+Interop with Dart's typed data is zero-copy:
+
+```dart
+final bytes = Bytes.fromTypedData(byteData); // Uint8List/ByteData/Int32List...
+final typed = bytes.asUint8List();            // zero-copy view
+```
+
+Other byte libraries can implement `BytesLike`:
+
+```dart
+abstract interface class BytesLike {
+  int get length;
+  Uint8List asUint8List();
+}
+```
+
+Convert at the boundary, then keep `Bytes`/`Uint8List` in hot loops.
 
 ### Encoding
 
@@ -120,6 +145,40 @@ region.prefetch(offset: 0, length: 1 << 20); // WILLNEED / PrefetchVirtualMemory
 region.discard(offset: 0, length: 1 << 20);  // DONTNEED (Windows no-op for file maps)
 ```
 
+File-level allocation/copy helpers:
+
+```dart
+file.punchHole(4096, 4096);               // Windows/Linux: deallocate extents
+file.cloneRangeFrom(src, length: 1 << 20); // Windows: block clone (if supported)
+file.preallocate(32 << 30);                // macOS F_PREALLOCATE
+file.adviseRead(offset: 0, length: 1 << 20); // macOS F_RDADVISE
+
+cloneFileSync('/tmp/a.bin', '/tmp/b.bin'); // macOS APFS clonefile; copy elsewhere
+```
+
+`punchHole`/`cloneRangeFrom` are best-effort: unsupported filesystems throw
+`UnsupportedError`/`WindowsException`, so fall back to `zeroize` or copy.
+
+Use `maxQueue` to bound queued + in-flight work:
+
+```dart
+final pool = await ParallelBytesFile.open(
+  '/tmp/data.bin',
+  maxWorkers: 8,
+  maxQueue: 64,
+);
+```
+
+Windows 10 1803+ can reserve a replaceable placeholder window with
+`MapViewOfFile3`, which avoids unmap/remap gaps for window managers:
+
+```dart
+final placeholder = file.createPlaceholder(1 << 20);
+final view = placeholder.map(otherFile); // replaces the current view
+view.close();
+placeholder.close();
+```
+
 `readMany` merges exactly adjacent ranges (one syscall per sequential run).
 For `readOnly: true` files up to `mmapReadCacheLimit` (default 1 GiB), each
 worker maps the whole file once and serves reads from memory; hot random reads
@@ -144,6 +203,10 @@ stream.close();
 workers. On 4K random reads direct I/O is much slower than buffered/mmap
 (measured ~7k vs ~175k IOPS on 8 GiB); use it only for aligned streaming.
 
+On Windows, `largePages: true` asks for `MEM_LARGE_PAGES` scratch buffers for
+direct I/O. It needs `SeLockMemoryPrivilege`; without it the allocator falls
+back to normal pages and `file.usesLargePages` stays `false`:
+
 `IocpFile` (Windows) is available for a single worker that wants deeper queue:
 
 ```dart
@@ -151,6 +214,24 @@ final f = IocpFile.openSync('/tmp/data.bin', queueDepth: 32);
 final data = f.readManySync(offsets, 4096);
 f.close();
 ```
+
+`UringBytesFile` (Linux) uses `package:io_uring`'s raw SQ/CQ rings. Use the
+batch methods for queue depth; a single 4 KiB read is usually better on the
+buffered/mmap path:
+
+```dart
+final f = await openUringBytesFile('/tmp/data.bin', entries: 64);
+try {
+  await f.writeMany(offsets, blocks);
+  final reads = await f.readMany(offsets, 4096);
+  await f.flush();
+} finally {
+  await f.close();
+}
+```
+
+`entries` must be at least the batch size. The backend is Linux-only; other
+platforms throw `UnsupportedError`.
 
 ## 32 GiB semantics
 
@@ -216,8 +297,9 @@ isolate-pool barriers and (skipped by default) 32 GiB sparse writes. Chrome
 tests cover the OPFS backend and Web fuzz. CI runs Dart on
 Ubuntu/macOS/Windows, Chrome on Ubuntu, Flutter desktop/Web builds, and on
 push/manual runs a Windows benchmark job after all tests pass. That job renders
-`assets/benchmarks.svg`, uploads the JSONL + SVG artifact, and commits the SVG
-with `[skip ci]`; PR runs stop after the tests. Manual `workflow_dispatch`
+`assets/benchmarks.svg` with `bench-svg` (`bench-svg.toml` + the
+`unk-404/benchmark_svg` action), uploads the JSONL + SVG artifact, and commits
+the SVG with `[skip ci]`; PR runs stop after the tests. Manual `workflow_dispatch`
 accepts `benchmark_gb` (default 4; hosted Windows runners should stay small).
 For a local 32 GiB run, use
 `BYTES_BENCH_GB=32 dart run benchmark_test benchmark/random_32g_benchmarks_test.dart`.

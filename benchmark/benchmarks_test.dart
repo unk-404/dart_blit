@@ -138,6 +138,19 @@ void main() {
     _sink ^= mut.asUint8List()[0];
   });
 
+  final typed = Uint8List.fromList(_pattern(4096));
+  bench('core.Bytes.fromTypedData x4096', () {
+    for (var i = 0; i < 4096; i++) {
+      _sink ^= Bytes.fromTypedData(typed).getUint8(0);
+    }
+  });
+
+  bench('core.TypedData.asBytes x4096', () {
+    for (var i = 0; i < 4096; i++) {
+      _sink ^= typed.asBytes().getUint8(0);
+    }
+  });
+
   const ua = Uint64(0x12345678, 0x9ABCDEF0);
   const ub = Uint64(0x0FEDCBA9, 0x87654321);
   bench('core.Uint64.add x1024', () {

@@ -13,10 +13,19 @@ export 'mmap_base.dart';
 /// offsets/lengths and is for streaming files larger than RAM; random 4 KiB
 /// access is much slower than the buffered/mmap path.
 Future<MmapFile> openMmapFile(String path,
-    {bool create = true, bool readOnly = false, bool direct = false}) async {
+    {bool create = true,
+    bool readOnly = false,
+    bool direct = false,
+    bool largePages = false}) async {
   if (Platform.isWindows) {
-    return WindowsMmapFile.open(
-        path, create: create, readOnly: readOnly, direct: direct);
+    return WindowsMmapFile.open(path,
+        create: create,
+        readOnly: readOnly,
+        direct: direct,
+        largePages: largePages);
+  }
+  if (largePages) {
+    throw UnsupportedError('large pages are only implemented on Windows');
   }
   return PosixMmapFile.open(
       path, create: create, readOnly: readOnly, direct: direct);
@@ -24,11 +33,37 @@ Future<MmapFile> openMmapFile(String path,
 
 /// Synchronous open.
 MmapFile openMmapFileSync(String path,
-    {bool create = true, bool readOnly = false, bool direct = false}) {
+    {bool create = true,
+    bool readOnly = false,
+    bool direct = false,
+    bool largePages = false}) {
   if (Platform.isWindows) {
-    return WindowsMmapFile.openSync(
-        path, create: create, readOnly: readOnly, direct: direct);
+    return WindowsMmapFile.openSync(path,
+        create: create,
+        readOnly: readOnly,
+        direct: direct,
+        largePages: largePages);
+  }
+  if (largePages) {
+    throw UnsupportedError('large pages are only implemented on Windows');
   }
   return PosixMmapFile.openSync(
       path, create: create, readOnly: readOnly, direct: direct);
+}
+
+/// Clones [source] to [dest].
+///
+/// macOS/iOS use `clonefile(2)` (APFS copy-on-write).  Other platforms fall
+/// back to `File.copySync`; use [MmapFile.cloneRangeFrom] on Windows when
+/// block cloning is available.
+void cloneFileSync(String source, String dest, {bool overwrite = false}) {
+  if (Platform.isMacOS || Platform.isIOS) {
+    posixCloneFileSync(source, dest, overwrite: overwrite);
+    return;
+  }
+  if (overwrite) {
+    final old = File(dest);
+    if (old.existsSync()) old.deleteSync();
+  }
+  File(source).copySync(dest);
 }

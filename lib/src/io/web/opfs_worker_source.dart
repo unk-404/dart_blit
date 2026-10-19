@@ -50,6 +50,75 @@ const handles = new Map();
 let nextHandleId = 1;
 let rootPromise = null;
 
+// Optional SharedArrayBuffer ring; null unless the page is cross-origin
+// isolated and the client sent `sabInit`.
+const SAB_STRIDE = 16;
+let sabControl = null;
+let sabData = null;
+let sabSlots = 0;
+let sabPayload = 0;
+let sabIdle = 0;
+
+function sabInit(m) {
+  sabSlots = m.slots | 0;
+  sabPayload = m.payload | 0;
+  sabControl = new Int32Array(m.sab, 0, sabSlots * SAB_STRIDE + 1);
+  sabData = new Uint8Array(m.sab, m.controlBytes | 0, sabSlots * sabPayload);
+  sabIdle = sabSlots * SAB_STRIDE;
+  Atomics.store(sabControl, sabIdle, 1);
+  return {};
+}
+
+function sabDrain() {
+  if (!sabControl) return;
+  for (;;) {
+    let found = false;
+    for (let i = 0; i < sabSlots; i++) {
+      const base = i * SAB_STRIDE;
+      if (Atomics.load(sabControl, base) !== 2) continue;
+      found = true;
+      const op = Atomics.load(sabControl, base + 1);
+      const handle = Atomics.load(sabControl, base + 3);
+      const at = Atomics.load(sabControl, base + 4) +
+          Atomics.load(sabControl, base + 5) * 4294967296;
+      const len = Atomics.load(sabControl, base + 6);
+      const off = i * sabPayload;
+      let n = -1;
+      let err = 0;
+      try {
+        const h = handleFor(handle);
+        if (op === 1) {
+          n = h.read(sabData.subarray(off, off + len), {at: at});
+        } else if (op === 2) {
+          n = h.write(sabData.subarray(off, off + len), {at: at});
+        } else {
+          throw new Error('unknown SAB op: ' + op);
+        }
+      } catch (_) {
+        n = -1;
+        err = 1;
+      }
+      Atomics.store(sabControl, base + 7, n);
+      Atomics.store(sabControl, base + 8, err);
+      Atomics.store(sabControl, base, 3);
+      Atomics.notify(sabControl, base, 1);
+    }
+    if (!found) {
+      Atomics.store(sabControl, sabIdle, 1);
+      // Re-check after publishing idle to close the lost-wake window.
+      let pending = false;
+      for (let i = 0; i < sabSlots; i++) {
+        if (Atomics.load(sabControl, i * SAB_STRIDE) === 2) {
+          pending = true;
+          break;
+        }
+      }
+      if (!pending) break;
+      Atomics.store(sabControl, sabIdle, 0);
+    }
+  }
+}
+
 function root() {
   if (!rootPromise) {
     if (!navigator.storage || typeof navigator.storage.getDirectory !== 'function') {
@@ -226,6 +295,24 @@ let chain = Promise.resolve();
 
 self.onmessage = function (event) {
   const m = event.data;
+  if (m.op === 'sabInit') {
+    try {
+      const value = sabInit(m);
+      self.postMessage({id: m.id, ok: true, value: value});
+    } catch (e) {
+      self.postMessage({
+        id: m.id,
+        ok: false,
+        name: String((e && e.name) || 'Error'),
+        error: String((e && e.message) || e)
+      });
+    }
+    return;
+  }
+  if (m.op === 'sabWake') {
+    sabDrain();
+    return;
+  }
   chain = chain.then(async function () {
     try {
       const op = ops[m.op];

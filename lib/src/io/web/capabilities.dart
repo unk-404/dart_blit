@@ -158,7 +158,8 @@ Future<WebStorageCapabilities> probeWebStorageCapabilities({
       }
     }
     try {
-      final client = await OpfsWorkerClient.instance();
+      final pool = await OpfsWorkerPool.instance();
+      final client = pool.manifest;
       final caps = client.capabilities ?? await client.hello();
       syncInWorker = caps.syncAccessHandle;
       if (!caps.opfs) {

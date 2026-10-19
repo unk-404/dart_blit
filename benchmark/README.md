@@ -85,9 +85,21 @@ the dispatch path.
 
 On push/manual runs, `.github/workflows/ci.yml` runs the core/1 GiB/pool suite,
 the random 4 GiB suite, and the IOCP sweep after all tests pass, then renders
-`assets/benchmarks.svg` and uploads JSONL + SVG. It commits the SVG on
+`assets/benchmarks.svg` with
+[`bench-svg`](https://github.com/unk-404/benchmark_svg) and uploads JSONL + SVG.
+Rows, labels and units live in `bench-svg.toml`. It commits the SVG on
 push/manual only (PR runs stop after tests). Manual `workflow_dispatch` accepts
 `benchmark_gb` (default 4). There is no separate benchmark workflow; for a local
 32 GiB run use
 `BYTES_BENCH_GB=32 dart run benchmark_test benchmark/random_32g_benchmarks_test.dart`.
+
+To refresh the chart locally after producing the three JSONL files:
+
+```bash
+bench-svg render bench-core.jsonl bench-random.jsonl bench-iocp.jsonl \
+  --format benchmark_test --config bench-svg.toml \
+  --font-file assets/fonts/MPLUSRounded1c-Regular.ttf \
+  --out assets/benchmarks.svg
+```
+
 `dart test` does not execute `benchmark/`.

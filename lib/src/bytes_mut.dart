@@ -10,9 +10,10 @@ library;
 import 'dart:typed_data';
 
 import 'bytes.dart';
+import 'bytes_like.dart';
 import 'u64/uint64.dart';
 
-final class BytesMut {
+final class BytesMut implements BytesLike {
   Uint8List _data;
   int _start;
   int _length;
@@ -40,6 +41,7 @@ final class BytesMut {
 
   BytesMut._(this._data, this._start, this._length, this._frozen);
 
+  @override
   int get length => _length;
   int get capacity => _data.length - _start;
   bool get isEmpty => _length == 0;
@@ -47,6 +49,7 @@ final class BytesMut {
   bool get isUnique => !_frozen;
 
   /// Zero-copy view of the visible range.
+  @override
   Uint8List asUint8List() =>
       Uint8List.sublistView(_data, _start, _start + _length);
 

@@ -1,17 +1,16 @@
 # Fonts
 
-`benchmarks.svg` uses **Rounded Mplus 1c** for its text, converted to SVG
-outlines so GitHub does not need to load or install a font.
+`benchmarks.svg` is rendered by
+[`bench-svg`](https://github.com/unk-404/benchmark_svg) with **Rounded Mplus 1c**.
+The tool converts the TTF to SVG glyph outlines, so GitHub does not need to load
+or install the font.
 
 - Source: https://github.com/google/fonts/tree/main/ofl/mplusrounded1c
 - Copyright: Copyright 2016 The Rounded M+ Project Authors.
 - License: SIL Open Font License 1.1 (`OFL.txt`)
-- `mplus_rounded1c_glyphs.json`: ASCII + `·`/`±` subset generated from the TTF
-  with fontTools; it contains advances and path outlines, not the full font.
+- `MPLUSRounded1c-Regular.ttf`: passed to `bench-svg` via `--font-file`; it is
+  kept for local/CI rendering but excluded from the pub package.
 
-The kaomoji `(◕‿◕)♡` intentionally uses the platform emoji font
-(`Segoe UI Emoji` / `Apple Color Emoji` / `Noto Color Emoji`) so the custom
-font cannot distort it.
-
-The TTF is kept in the repository for regeneration but is excluded from the
-pub package; the generated JSON and the OFL license are included.
+The kaomoji `(◕‿◕)♡` is rendered with the platform emoji font
+(`Segoe UI Emoji` / `Apple Color Emoji` / `Noto Color Emoji`) so the custom font
+cannot distort it.

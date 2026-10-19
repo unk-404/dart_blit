@@ -19,11 +19,13 @@
 ///
 /// ## Threading and locking
 ///
-/// `createSyncAccessHandle()` is dedicated-worker-only, so every handle lives in
-/// [OpfsWorkerClient]'s worker.  A sync handle takes an exclusive lock on its
-/// file, which is why handles are cached per *chunk* (LRU, 8 open at a time)
-/// and only touched by this file instance.  Two instances on the *same* logical
-/// path would fight over the same chunk files; open one instance per path.
+/// `createSyncAccessHandle()` is dedicated-worker-only, so handles live in
+/// [OpfsWorkerPool]: chunk `i` is owned by `clients[i % clients.length]`, while
+/// the manifest is written only by `clients.first`.  A sync handle takes an
+/// exclusive lock on its file, which is why handles are cached per *chunk*
+/// (LRU, 8 open at a time) and only touched by this file instance.  Two
+/// instances on the *same* logical path would fight over the same chunk files;
+/// open one instance per path.
 ///
 /// ## Durability
 ///
@@ -44,16 +46,24 @@ import 'errors.dart';
 import 'manifest.dart';
 import 'opfs_client.dart';
 
+/// A chunk handle and the worker that exclusively owns its sync handle.
+final class _ChunkHandle {
+  final OpfsWorkerClient client;
+  final int handle;
+
+  const _ChunkHandle(this.client, this.handle);
+}
+
 /// A [BytesFile] backed by Origin Private File System chunks.
 final class WebOpfsBytesFile implements BytesFile {
   WebOpfsBytesFile._({
     required this.path,
     required this.readOnly,
     required this.chunkSize,
-    required OpfsWorkerClient client,
+    required OpfsWorkerPool pool,
     required WebManifestState manifest,
     required int slot,
-  }) : _client = client,
+  }) : _pool = pool,
        _manifest = manifest,
        _loadedSlot = slot;
 
@@ -69,10 +79,11 @@ final class WebOpfsBytesFile implements BytesFile {
   /// Chunk size in bytes (stored in the manifest; fixed per logical file).
   final int chunkSize;
 
-  final OpfsWorkerClient _client;
+  final OpfsWorkerPool _pool;
+  OpfsWorkerClient get _manifestClient => _pool.manifest;
   final WebManifestState _manifest;
   final int _loadedSlot;
-  final Map<int, int> _chunkHandles = <int, int>{};
+  final Map<int, _ChunkHandle> _chunkHandles = <int, _ChunkHandle>{};
   final List<int> _lru = <int>[];
   final Map<int, int> _crcState = <int, int>{};
   final Map<int, int> _crcNext = <int, int>{};
@@ -93,6 +104,7 @@ final class WebOpfsBytesFile implements BytesFile {
     bool create = true,
     bool readOnly = false,
     int chunkSize = kDefaultChunkSize,
+    int? workers,
   }) async {
     final normalized = normalizeLogicalPath(path);
     if (chunkSize < kMinChunkSize || chunkSize > kMaxChunkSize) {
@@ -103,8 +115,8 @@ final class WebOpfsBytesFile implements BytesFile {
         'chunkSize',
       );
     }
-    final client = await OpfsWorkerClient.instance();
-    final loaded = await _loadBestManifest(client, normalized);
+    final pool = await OpfsWorkerPool.instance(workers: workers);
+    final loaded = await _loadBestManifest(pool.manifest, normalized);
     final WebManifestState manifest;
     if (loaded == null) {
       if (!create || readOnly) {
@@ -122,7 +134,7 @@ final class WebOpfsBytesFile implements BytesFile {
       path: normalized,
       readOnly: readOnly,
       chunkSize: manifest.chunkSize,
-      client: client,
+      pool: pool,
       manifest: manifest,
       slot: loaded?.slot ?? -1,
     );
@@ -137,8 +149,8 @@ final class WebOpfsBytesFile implements BytesFile {
   /// file (no sync handle is taken, so no lock is involved).
   static Future<WebFileManifest?> readManifest(String path) async {
     final normalized = normalizeLogicalPath(path);
-    final client = await OpfsWorkerClient.instance();
-    final loaded = await _loadBestManifest(client, normalized);
+    final pool = await OpfsWorkerPool.instance();
+    final loaded = await _loadBestManifest(pool.manifest, normalized);
     return loaded?.state.snapshot(slot: loaded.slot);
   }
 
@@ -293,7 +305,7 @@ final class WebOpfsBytesFile implements BytesFile {
     int dstStart,
     int length,
   ) async {
-    final int handle;
+    final _ChunkHandle handle;
     try {
       handle = await _acquireChunk(index, create: false);
     } on WebFileSystemException catch (error) {
@@ -305,7 +317,7 @@ final class WebOpfsBytesFile implements BytesFile {
       }
       rethrow;
     }
-    final data = await _client.read(handle, inChunk, length);
+    final data = await handle.client.read(handle.handle, inChunk, length);
     dst.setRange(dstStart, dstStart + data.length, data);
     return data.length;
   }
@@ -360,7 +372,7 @@ final class WebOpfsBytesFile implements BytesFile {
       _updateChunkCrc(index, inChunk, piece);
       final int written;
       try {
-        written = await _client.write(handle, inChunk, piece);
+        written = await handle.client.write(handle.handle, inChunk, piece);
       } catch (_) {
         _invalidateChunkCrc(index);
         rethrow;
@@ -426,7 +438,7 @@ final class WebOpfsBytesFile implements BytesFile {
       if (_manifest.isMaterialized(index)) {
         await _closeChunkHandle(index);
         try {
-          await _client.remove(chunkPathFor(path, index));
+          await _manifestClient.remove(chunkPathFor(path, index));
         } on WebFileSystemException catch (error) {
           if (!error.isNotFound) rethrow;
         }
@@ -439,16 +451,17 @@ final class WebOpfsBytesFile implements BytesFile {
 
     if (partialIndex >= 0 && _manifest.isMaterialized(partialIndex)) {
       await _closeChunkHandle(partialIndex);
+      final client = _pool.clientForChunk(partialIndex);
       try {
-        final opened = await _client.open(
+        final opened = await client.open(
           chunkPathFor(path, partialIndex),
           create: false,
         );
         try {
-          await _client.truncate(opened.handle, remainder);
-          await _client.flush(opened.handle);
+          await client.truncate(opened.handle, remainder);
+          await client.flush(opened.handle);
         } finally {
-          await _client.closeHandle(opened.handle);
+          await client.closeHandle(opened.handle);
         }
       } on WebFileSystemException catch (error) {
         if (!error.isNotFound) rethrow;
@@ -469,7 +482,7 @@ final class WebOpfsBytesFile implements BytesFile {
     _checkOpen();
     return _serialize(() async {
       for (final handle in _chunkHandles.values) {
-        await _client.flush(handle);
+        await handle.client.flush(handle.handle);
       }
       if (_manifestDirty) await _persist();
     });
@@ -485,12 +498,12 @@ final class WebOpfsBytesFile implements BytesFile {
       _lru.clear();
       for (final handle in handles) {
         try {
-          await _client.flush(handle);
+          await handle.client.flush(handle.handle);
         } catch (_) {
           // Best effort: still try to release the lock.
         }
         try {
-          await _client.closeHandle(handle);
+          await handle.client.closeHandle(handle.handle);
         } catch (_) {
           // The worker may already be gone; nothing else we can do.
         }
@@ -508,14 +521,14 @@ final class WebOpfsBytesFile implements BytesFile {
       _lru.clear();
       for (final handle in handles) {
         try {
-          await _client.closeHandle(handle);
+          await handle.client.closeHandle(handle.handle);
         } catch (_) {
           // Ignore: removal below drops the whole directory.
         }
       }
       _crcState.clear();
       _crcNext.clear();
-      await _client.remove(storePath, recursive: true);
+      await _manifestClient.remove(storePath, recursive: true);
       _manifestDirty = false;
     });
   }
@@ -525,11 +538,12 @@ final class WebOpfsBytesFile implements BytesFile {
     final next = (_manifest.generation + 1) & 0xFFFFFFFF;
     _manifest.generation = next;
     final slot = next.isEven ? 1 : 0;
-    await _client.writeAll(manifestPathFor(path, slot), _manifest.encode());
+    await _manifestClient.writeAll(
+        manifestPathFor(path, slot), _manifest.encode());
     _manifestDirty = false;
   }
 
-  Future<int> _acquireChunk(int index, {required bool create}) async {
+  Future<_ChunkHandle> _acquireChunk(int index, {required bool create}) async {
     final cached = _chunkHandles[index];
     if (cached != null) {
       _touchChunk(index);
@@ -540,20 +554,22 @@ final class WebOpfsBytesFile implements BytesFile {
       final handle = _chunkHandles.remove(evict);
       if (handle != null) {
         try {
-          await _client.flush(handle);
+          await handle.client.flush(handle.handle);
         } catch (_) {}
         try {
-          await _client.closeHandle(handle);
+          await handle.client.closeHandle(handle.handle);
         } catch (_) {}
       }
     }
-    final opened = await _client.open(
+    final client = _pool.clientForChunk(index);
+    final opened = await client.open(
       chunkPathFor(path, index),
       create: create,
     );
-    _chunkHandles[index] = opened.handle;
+    final handle = _ChunkHandle(client, opened.handle);
+    _chunkHandles[index] = handle;
     _lru.add(index);
-    return opened.handle;
+    return handle;
   }
 
   void _touchChunk(int index) {
@@ -566,10 +582,10 @@ final class WebOpfsBytesFile implements BytesFile {
     _lru.remove(index);
     if (handle == null) return;
     try {
-      await _client.flush(handle);
+      await handle.client.flush(handle.handle);
     } catch (_) {}
     try {
-      await _client.closeHandle(handle);
+      await handle.client.closeHandle(handle.handle);
     } catch (_) {}
   }
 
@@ -611,19 +627,19 @@ final class WebOpfsBytesFile implements BytesFile {
   ///
   /// Diagnostic hook for tests: it temporarily releases this instance's handle
   /// on the chunk because a sync access handle is exclusive.
-  Future<int> debugPhysicalChunkSize(int index) async {
-    _checkOpen();
+  Future<int> debugPhysicalChunkSize(int index) async {    _checkOpen();
     return _serialize(() async {
       await _closeChunkHandle(index);
+      final client = _pool.clientForChunk(index);
       try {
-        final opened = await _client.open(
+        final opened = await client.open(
           chunkPathFor(path, index),
           create: false,
         );
         try {
-          return await _client.size(opened.handle);
+          return await client.size(opened.handle);
         } finally {
-          await _client.closeHandle(opened.handle);
+          await client.closeHandle(opened.handle);
         }
       } on WebFileSystemException catch (error) {
         if (error.isNotFound) return 0;
@@ -631,6 +647,12 @@ final class WebOpfsBytesFile implements BytesFile {
       }
     });
   }
+
+  /// Diagnostic hook for tests: which worker currently owns each open chunk.
+  List<int> debugChunkWorkerIndexes() => [
+        for (final handle in _chunkHandles.values)
+          _pool.clients.indexOf(handle.client),
+      ];
 
   /// In-memory manifest snapshot (diagnostics; does not re-read OPFS).
   WebFileManifest get manifest => _manifest.snapshot(slot: _loadedSlot);

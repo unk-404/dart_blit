@@ -1,11 +1,9 @@
-/// Main-thread client for the embedded OPFS worker.
+/// Main-thread client for the embedded OPFS workers.
 ///
-/// One worker per page (lazy singleton): every `FileSystemSyncAccessHandle`
-/// lives inside it, requests are FIFO, and binary payloads are transferred as
-/// `ArrayBuffer` (zero structured-clone cost).  A single worker is enough
-/// because the chunk server is metadata-driven — the bottleneck is OPFS I/O,
-/// not the message hop — and it keeps exclusive-lock reasoning trivial (one
-/// owner per chunk file).
+/// A page-wide [OpfsWorkerPool] owns several workers: chunk `i` is routed to
+/// `clients[i % N]`, while the manifest is written only by `clients.first`.
+/// Binary payloads are transferred as `ArrayBuffer`; in a cross-origin-isolated
+/// page small reads/writes additionally use the optional SAB ring below.
 @JS()
 library;
 
@@ -36,6 +34,10 @@ extension type _Request._(JSObject _) implements JSObject {
     int? size,
     int? limit,
     JSArrayBuffer? buffer,
+    JSObject? sab,
+    int? slots,
+    int? payload,
+    int? controlBytes,
   });
 }
 
@@ -44,6 +46,136 @@ typedef OpfsHandle = ({int handle, int size});
 
 /// Capabilities reported by the worker itself.
 typedef OpfsWorkerCapabilities = ({bool opfs, bool syncAccessHandle});
+
+/// Optional shared-memory ring for small `read`/`write` requests.
+///
+/// Only created when `crossOriginIsolated` is true, `SharedArrayBuffer` exists
+/// and `Atomics.waitAsync` is available.  Callers fall back to postMessage when
+/// a slot cannot be reserved or the request is larger than one slot.
+final class _SabRing {
+  static const int slots = 8;
+  static const int payload = 64 * 1024;
+  static const int stride = 16;
+  static const int _state = 0;
+  static const int _op = 1;
+  static const int _id = 2;
+  static const int _handle = 3;
+  static const int _atLo = 4;
+  static const int _atHi = 5;
+  static const int _len = 6;
+  static const int _result = 7;
+  static const int _error = 8;
+  static const int _idleIndex = slots * stride;
+
+  final JsSharedArrayBuffer buffer;
+  final JsInt32Array control;
+  final JsUint8Array data;
+  final int controlBytes;
+  final void Function() wake;
+  int _cursor = 0;
+
+  _SabRing._(this.buffer, this.control, this.data, this.controlBytes, this.wake);
+
+  static bool get supported {
+    if (globalContext['SharedArrayBuffer'].isUndefinedOrNull) return false;
+    final isolated = globalContext['crossOriginIsolated'];
+    if (isolated.isUndefinedOrNull ||
+        (isolated! as JSBoolean).toDart == false) {
+      return false;
+    }
+    final atomics = globalContext['Atomics'];
+    if (atomics.isUndefinedOrNull) return false;
+    final waitAsync = (atomics! as JSObject)['waitAsync'];
+    return waitAsync.isDefinedAndNotNull;
+  }
+
+  static _SabRing? create(void Function() wake) {
+    if (!supported) return null;
+    final controlBytes = (slots * stride + 1) * 4;
+    final total = controlBytes + slots * payload;
+    final sab = JsSharedArrayBuffer(total);
+    return _SabRing._(
+      sab,
+      JsInt32Array(sab, 0, slots * stride + 1),
+      JsUint8Array(sab, controlBytes, slots * payload),
+      controlBytes,
+      wake,
+    );
+  }
+
+  int _reserve(int op, int id, int handle, int at, int len) {
+    for (var n = 0; n < slots; n++) {
+      final slot = (_cursor + n) % slots;
+      final base = slot * stride;
+      if (jsAtomics.compareExchange(
+              control, base + _state, 0, 1) ==
+          0) {
+        control[base + _op] = op;
+        control[base + _id] = id;
+        control[base + _handle] = handle;
+        control[base + _atLo] = at & 0xFFFFFFFF;
+        control[base + _atHi] = (at ~/ 0x100000000) & 0xFFFFFFFF;
+        control[base + _len] = len;
+        control[base + _result] = 0;
+        control[base + _error] = 0;
+        control[base + _state] = 2;
+        _cursor = (slot + 1) % slots;
+        if (jsAtomics.compareExchange(control, _idleIndex, 1, 0) == 1) {
+          wake();
+        }
+        return slot;
+      }
+    }
+    return -1;
+  }
+
+  Future<int> _wait(int slot) async {
+    final base = slot * stride;
+    while (jsAtomics.load(control, base + _state) != 3) {
+      final result = jsAtomics.waitAsync(control, base + _state, 2);
+      final isAsync = (result['async'] as JSBoolean).toDart;
+      if (isAsync) {
+        await (result['value'] as JSPromise<JSAny?>).toDart;
+      } else {
+        final value = (result['value'] as JSString).toDart;
+        if (value != 'not-equal') {
+          await Future<void>.delayed(Duration.zero);
+        }
+      }
+    }
+    final n = control[base + _result];
+    final error = control[base + _error];
+    control[base + _state] = 0;
+    if (error != 0) {
+      throw WebFileSystemException(
+        'IOError',
+        'SAB ring operation failed (code $error)',
+      );
+    }
+    return n;
+  }
+
+  Future<Uint8List?> read(int id, int handle, int at, int len) async {
+    if (len < 0 || len > payload) return null;
+    final slot = _reserve(1, id, handle, at, len);
+    if (slot < 0) return null;
+    final n = await _wait(slot);
+    if (n < 0) return null;
+    final slice = data.subarray(slot * payload, slot * payload + n).slice();
+    final arrayBuffer = slice.buffer as JSArrayBuffer;
+    return arrayBuffer.toDart.asUint8List();
+  }
+
+  Future<int?> write(int id, int handle, int at, Uint8List bytes) async {
+    if (bytes.length > payload) return null;
+    final slot = _reserve(2, id, handle, at, bytes.length);
+    if (slot < 0) return null;
+    final view = JsUint8Array(
+        bytes.buffer.toJS, bytes.offsetInBytes, bytes.length);
+    data.set(view, slot * payload);
+    return _wait(slot);
+  }
+}
 
 /// Owns the dedicated worker that holds every `FileSystemSyncAccessHandle`.
 final class OpfsWorkerClient {
@@ -59,6 +191,7 @@ final class OpfsWorkerClient {
   bool _dead = false;
   String? _deadReason;
   OpfsWorkerCapabilities? _capabilities;
+  _SabRing? _sab;
 
   /// Returns the page-wide worker client, creating it on first use.
   ///
@@ -77,6 +210,26 @@ final class OpfsWorkerClient {
     return future;
   }
 
+  /// Initializes the optional SAB ring; failures fall back to postMessage.
+  Future<void> _initSab() async {
+    final ring = _SabRing.create(() {
+      _worker.postMessage(jsObject(<String, Object?>{'op': 'sabWake'}));
+    });
+    if (ring == null) return;
+    try {
+      await _request(
+        op: 'sabInit',
+        sab: ring.buffer,
+        slots: _SabRing.slots,
+        payload: _SabRing.payload,
+        controlBytes: ring.controlBytes,
+      );
+      _sab = ring;
+    } catch (_) {
+      // Keep the postMessage path.
+    }
+  }
+
   /// Worker capabilities from the `hello` handshake (`null` before start).
   OpfsWorkerCapabilities? get capabilities => _capabilities;
 
@@ -84,8 +237,19 @@ final class OpfsWorkerClient {
   bool get isDead => _dead;
 
   static Future<OpfsWorkerClient> _create() async {
+    final client = await createIsolated();
+    _instance = client;
+    return client;
+  }
+
+  /// Creates an independent worker that is not the shared singleton.
+  ///
+  /// Used by [OpfsWorkerPool] so different chunks can hold different sync
+  /// access handles in parallel.
+  static Future<OpfsWorkerClient> createIsolated() async {
     final client = _start();
     try {
+      await client._initSab();
       final caps = await client.hello();
       if (!caps.opfs) {
         client._failAll('OPFS is unavailable in this browser');
@@ -101,7 +265,6 @@ final class OpfsWorkerClient {
           'inside a dedicated worker; this browser does not expose it.',
         );
       }
-      _instance = client;
       return client;
     } catch (_) {
       client.shutdown();
@@ -208,6 +371,10 @@ final class OpfsWorkerClient {
     int? size,
     int? limit,
     Uint8List? bytes,
+    JSObject? sab,
+    int? slots,
+    int? payload,
+    int? controlBytes,
   }) {
     if (_dead) {
       return Future.error(
@@ -232,6 +399,10 @@ final class OpfsWorkerClient {
       size: size,
       limit: limit,
       buffer: bytes?.buffer.toJS,
+      sab: sab,
+      slots: slots,
+      payload: payload,
+      controlBytes: controlBytes,
     );
     try {
       if (bytes == null) {
@@ -279,6 +450,11 @@ final class OpfsWorkerClient {
   /// Reads up to [length] bytes at [at]; the returned list is a fresh buffer.
   Future<Uint8List> read(int handle, int at, int length) async {
     if (length <= 0) return Uint8List(0);
+    final ring = _sab;
+    if (ring != null && length <= _SabRing.payload) {
+      final value = await ring.read(_nextId++, handle, at, length);
+      if (value != null) return value;
+    }
     final value = await _request(
       op: 'read',
       handle: handle,
@@ -298,6 +474,11 @@ final class OpfsWorkerClient {
   /// freshly allocated list (the chunk writer copies user data into one).
   Future<int> write(int handle, int at, Uint8List bytes) async {
     if (bytes.isEmpty) return 0;
+    final ring = _sab;
+    if (ring != null && bytes.length <= _SabRing.payload) {
+      final value = await ring.write(_nextId++, handle, at, bytes);
+      if (value != null) return value;
+    }
     final value = await _request(
       op: 'write',
       handle: handle,
@@ -378,4 +559,72 @@ final class OpfsWorkerClient {
   /// This is an abrupt teardown: close the files you care about first so their
   /// chunk handles are flushed and their manifests persisted.
   void shutdown() => _failAll('OPFS worker was shut down');
+}
+
+/// Page-wide pool: one manifest writer worker plus N chunk workers.
+///
+/// OPFS sync access handles are exclusive per file, so chunk files can be
+/// handled in parallel as long as each chunk is owned by exactly one worker.
+final class OpfsWorkerPool {
+  OpfsWorkerPool._(this.clients);
+
+  static OpfsWorkerPool? _instance;
+  static Future<OpfsWorkerPool>? _pending;
+
+  final List<OpfsWorkerClient> clients;
+
+  /// Number of chunk workers to create by default.
+  static const int defaultWorkers = 4;
+
+  OpfsWorkerClient get manifest => clients.first;
+
+  OpfsWorkerClient clientForChunk(int index) =>
+      clients[index % clients.length];
+
+  bool get isDead => clients.any((client) => client.isDead);
+
+  /// Whether the SAB ring negotiated successfully in every worker.
+  bool get usesSabRing => clients.every((client) => client._sab != null);
+
+  static Future<OpfsWorkerPool> instance({int? workers}) {
+    final existing = _instance;
+    if (existing != null && !existing.isDead) return Future.value(existing);
+    final pending = _pending;
+    if (pending != null) return pending;
+    final count = workers ?? defaultWorkers;
+    if (count < 1) throw RangeError.value(count, 'workers');
+    late final Future<OpfsWorkerPool> future;
+    future = _create(count).whenComplete(() {
+      if (identical(_pending, future)) _pending = null;
+    });
+    _pending = future;
+    return future;
+  }
+
+  static Future<OpfsWorkerPool> _create(int count) async {
+    final created = <OpfsWorkerClient>[];
+    try {
+      for (var i = 0; i < count; i++) {
+        created.add(await OpfsWorkerClient.createIsolated());
+      }
+      final pool = OpfsWorkerPool._(List.unmodifiable(created));
+      _instance = pool;
+      return pool;
+    } catch (_) {
+      for (final client in created) {
+        client.shutdown();
+      }
+      rethrow;
+    }
+  }
+
+  static void shutdownShared() {
+    final existing = _instance;
+    _instance = null;
+    _pending = null;
+    if (existing == null) return;
+    for (final client in existing.clients) {
+      client.shutdown();
+    }
+  }
 }

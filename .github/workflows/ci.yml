@@ -199,6 +199,10 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+    env:
+      # The composite action resolves releases from GITHUB_REPOSITORY by
+      # default; point it at the tool repository explicitly.
+      BENCH_SVG_RELEASE_BASE: https://github.com/unk-404/benchmark_svg/releases
     steps:
       - uses: actions/checkout@v4
         with:
@@ -269,10 +273,30 @@ jobs:
           }
 
       - name: Render benchmark SVG
-        run: >
-          dart run tool/render_benchmark_svg.dart --out assets/benchmarks.svg
-          --commit "${{ github.sha }}"
-          bench-core.jsonl bench-random.jsonl bench-iocp.jsonl
+        uses: unk-404/benchmark_svg@v1
+        with:
+          input: |
+            bench-core.jsonl
+            bench-random.jsonl
+            bench-iocp.jsonl
+          format: benchmark_test
+          out: assets/benchmarks.svg
+          config: bench-svg.toml
+          font_file: assets/fonts/MPLUSRounded1c-Regular.ttf
+
+      - name: Verify benchmark SVG
+        shell: pwsh
+        run: |
+          if (!(Test-Path assets/benchmarks.svg)) {
+            throw 'bench-svg did not write assets/benchmarks.svg'
+          }
+          if ((Get-Item assets/benchmarks.svg).Length -le 0) {
+            throw 'assets/benchmarks.svg is empty'
+          }
+          $head = Get-Content assets/benchmarks.svg -TotalCount 1
+          if ($head -notmatch '^\s*<\?xml') {
+            throw "assets/benchmarks.svg does not start with <?xml: $head"
+          }
 
       - name: Upload benchmark data + SVG
         if: always()

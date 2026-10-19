@@ -85,6 +85,25 @@ void main() {
     await pool.close();
   });
 
+  test('maxQueue applies backpressure without deadlock', () async {
+    final pool = await ParallelBytesFile.open(
+      path,
+      maxWorkers: 2,
+      maxQueue: 2,
+    );
+    try {
+      await pool.truncate(0);
+      final writes = [
+        for (var i = 0; i < 64; i++)
+          pool.writeAt(i * 8, Uint8List(8)..fillRange(0, 8, i)),
+      ];
+      await Future.wait(writes).timeout(const Duration(seconds: 20));
+      expect(await pool.length, 64 * 8);
+    } finally {
+      await pool.close();
+    }
+  });
+
   test('readMany coalesces adjacent ranges and preserves order', () async {
     final pool = await ParallelBytesFile.open(path, maxWorkers: 4);
     await pool.truncate(0);

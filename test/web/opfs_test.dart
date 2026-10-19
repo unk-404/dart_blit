@@ -507,6 +507,31 @@ void main() {
     expect((await readWebFileManifest(path))!.logicalLength, target);
     await reopened.close();
   });
+
+  test('chunks are distributed across worker pool', () async {
+    final path = _newPath('worker-pool');
+    final file = await _openTyped(path, chunkSize: 64);
+    expect(await file.writeAt(0, _pattern(256)), 256);
+    final workers = file.debugChunkWorkerIndexes().toSet();
+    expect(workers.length, greaterThan(1));
+    expect(workers.every((index) => index >= 0), isTrue);
+    await file.flush();
+  });
+
+  test('SAB ring is used when the page is cross-origin isolated', () async {
+    final caps = await probeWebStorageCapabilities();
+    if (!caps.crossOriginIsolated) return;
+    final pool = await OpfsWorkerPool.instance();
+    expect(pool.usesSabRing, isTrue);
+    final path = _newPath('sab-ring');
+    final file = await _openTyped(path, chunkSize: 64 * 1024);
+    final data = _pattern(64 * 1024, seed: 9);
+    expect(await file.writeAt(0, data), data.length);
+    final back = Uint8List(data.length);
+    expect(await file.readAt(0, back), data.length);
+    expect(_sameBytes(back, data), isTrue);
+    await file.flush();
+  });
 }
 
 int _crcOf(Uint8List data, int start, int end) {
