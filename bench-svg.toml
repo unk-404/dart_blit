@@ -1,15 +1,15 @@
 # Rendered by bench-svg (https://github.com/unk-404/benchmark_svg).
-# Two series: Dart and the C counterpart. CI passes the TTF via --font-file.
+# One chart: native I/O (Dart vs C) plus core Bytes (Dart-only placeholder).
 [render]
 title = "blit vs C"
-subtitle = "{os|local} · Dart vs C · {commit:short|local}"
+subtitle = "{os|local} - Dart vs C - {commit:short|local}"
 footer = "Generated from {rows} rows"
 width = 920
 min_height = 0
-max_rows = 15
-only_matched = true
+max_rows = 30
+only_matched = false
 missing = "placeholder"
-kaomoji = "(◕‿◕)♡"
+kaomoji = "(^_^)"
 
 [[series]]
 label = "Dart"
@@ -27,7 +27,7 @@ color = "#FFB7C5"
 [[row]]
 id = "file.read.8MiB"
 label = "Sequential read"
-note = "8 MiB blocks · 1 GiB file"
+note = "8 MiB blocks - 1 GiB file"
 unit = "GiB/s"
 value = "value * 8 / 1024"
 group = "File I/O"
@@ -35,7 +35,7 @@ group = "File I/O"
 [[row]]
 id = "file.write.8MiB"
 label = "Sequential write"
-note = "8 MiB blocks · 1 GiB file"
+note = "8 MiB blocks - 1 GiB file"
 unit = "GiB/s"
 value = "value * 8 / 1024"
 group = "File I/O"
@@ -43,14 +43,14 @@ group = "File I/O"
 [[row]]
 id = "file.read.random4K"
 label = "Random pread"
-note = "4 KiB · 1 GiB file"
+note = "4 KiB - 1 GiB file"
 unit = "IOPS"
 group = "File I/O"
 
 [[row]]
 id = "file.write.random4K"
 label = "Random pwrite"
-note = "4 KiB · 1 GiB file · buffered"
+note = "4 KiB - 1 GiB file - buffered"
 unit = "IOPS"
 group = "File I/O"
 
@@ -58,23 +58,22 @@ group = "File I/O"
 [[row]]
 id = "mmap.read.random4K"
 label = "mmap read"
-note = "4 KiB random · 1 GiB mapping"
+note = "4 KiB random - 1 GiB mapping"
 unit = "IOPS"
 group = "mmap"
 
 [[row]]
 id = "mmap.write.random4K"
 label = "mmap write"
-note = "4 KiB random · 1 GiB mapping"
+note = "4 KiB random - 1 GiB mapping"
 unit = "IOPS"
 group = "mmap"
 
-# Dart-only engines: C has no equivalent implementation, so these rows keep a
-# placeholder C track.
+# Dart-only engines.
 [[row]]
 match = 'pool\.read\.random4K\.w(\d+)$'
-label = "Pool read · $1 workers"
-note = "Dart isolate pool · 4 KiB · batch 32"
+label = "Pool read - $1 workers"
+note = "Dart isolate pool - 4 KiB - batch 32"
 unit = "IOPS"
 value = "value * $1 * 32"
 group = "Dart pool"
@@ -82,7 +81,7 @@ group = "Dart pool"
 [[row]]
 match = 'pool\.read\.sequential4K\.w(\d+)$'
 label = "Pool sequential"
-note = "Dart isolate pool · 4 KiB · coalesced"
+note = "Dart isolate pool - 4 KiB - coalesced"
 unit = "IOPS"
 value = "value * 32"
 group = "Dart pool"
@@ -90,29 +89,151 @@ group = "Dart pool"
 [[row]]
 match = 'random(\d+)g\.pread\.read\.random4K$'
 label = "Large random pread"
-note = "Dart · 4 KiB · $1 GiB file"
+note = "Dart - 4 KiB - $1 GiB file"
 unit = "IOPS"
 group = "Dart large file"
 
 [[row]]
 match = 'random(\d+)g\.pwrite\.write\.random4K$'
 label = "Large random pwrite"
-note = "Dart · 4 KiB · $1 GiB file · buffered"
+note = "Dart - 4 KiB - $1 GiB file - buffered"
 unit = "IOPS"
 group = "Dart large file"
 
 [[row]]
 id = "iocp.read.random4K.qd32"
-label = "IOCP read · QD32"
-note = "Dart · Windows · single worker"
+label = "IOCP read - QD32"
+note = "Dart - Windows - single worker"
 unit = "IOPS"
 value = "value * 32"
 group = "Dart IOCP"
 
 [[row]]
 id = "iocp.write.random4K.qd32"
-label = "IOCP write · QD32"
-note = "Dart · Windows · single worker · buffered"
+label = "IOCP write - QD32"
+note = "Dart - Windows - single worker - buffered"
 unit = "IOPS"
 value = "value * 32"
 group = "Dart IOCP"
+
+# Core Bytes / BytesMut / reader / writer. C has no counterpart, so the C
+# track is a placeholder; this is intentionally not a language comparison.
+[[row]]
+id = "Bytes bytes.slice x1024"
+label = "slice()"
+note = "O(1) view - 1 MiB source"
+unit = "MSlices/s"
+value = "value * 1024 / 1000000"
+group = "Bytes"
+
+[[row]]
+id = "Bytes bytes.fromTypedData x4096"
+label = "fromTypedData()"
+note = "zero-copy wrapper"
+unit = "Mops/s"
+value = "value * 4096 / 1000000"
+group = "Bytes"
+
+[[row]]
+id = "Bytes bytes.copyTo.4KiB x64"
+label = "copyTo 4 KiB"
+note = "64 copies per body"
+unit = "GiB/s"
+value = "value * 64 * 4096 / 1073741824"
+group = "Bytes"
+
+[[row]]
+id = "Bytes bytes.getUint8.checked x4096"
+label = "getUint8 checked"
+note = "1 byte - bounds checked"
+unit = "Mreads/s"
+value = "value * 4096 / 1000000"
+group = "Bytes reads"
+
+[[row]]
+id = "Bytes bytes.getUint8.unchecked x4096"
+label = "getUint8 unchecked"
+note = "1 byte - no bounds check"
+unit = "Mreads/s"
+value = "value * 4096 / 1000000"
+group = "Bytes reads"
+
+[[row]]
+id = "Bytes bytes.getUint32 x4096"
+label = "getUint32"
+note = "4 bytes - bounds checked"
+unit = "Mreads/s"
+value = "value * 4096 / 1000000"
+group = "Bytes reads"
+
+[[row]]
+id = "BytesMut mut.putUint8.checked x4096"
+label = "putUint8 checked"
+note = "1 byte - capacity checked"
+unit = "MiB/s"
+value = "value * 4096 / 1048576"
+group = "BytesMut writes"
+
+[[row]]
+id = "BytesMut mut.putUint8.unchecked x4096"
+label = "putUint8 unchecked"
+note = "1 byte - caller reserves"
+unit = "MiB/s"
+value = "value * 4096 / 1048576"
+group = "BytesMut writes"
+
+[[row]]
+id = "BytesMut mut.spareView.4KiB x1"
+label = "spareView 4 KiB"
+note = "direct Uint8List + advance"
+unit = "MiB/s"
+value = "value * 4096 / 1048576"
+group = "BytesMut writes"
+
+[[row]]
+id = "BytesMut mut.putUint32 x1024"
+label = "putUint32"
+note = "4 bytes - capacity checked"
+unit = "Mwrites/s"
+value = "value * 1024 / 1000000"
+group = "BytesMut writes"
+
+[[row]]
+id = "Raw raw.uint8.write x4096"
+label = "raw Uint8List write"
+note = "1 byte - baseline, no Bytes wrapper"
+unit = "MiB/s"
+value = "value * 4096 / 1048576"
+group = "Baseline"
+
+[[row]]
+id = "Raw raw.uint8.read x4096"
+label = "raw Uint8List read"
+note = "1 byte - baseline, no Bytes wrapper"
+unit = "Mreads/s"
+value = "value * 4096 / 1000000"
+group = "Baseline"
+
+[[row]]
+id = "Reader/Writer reader.readUint8.checked x4096"
+label = "reader checked"
+note = "1 byte - cursor bounds"
+unit = "Mreads/s"
+value = "value * 4096 / 1000000"
+group = "Reader/Writer"
+
+[[row]]
+id = "Reader/Writer reader.readUint8.unchecked x4096"
+label = "reader unchecked"
+note = "1 byte - caller checks"
+unit = "Mreads/s"
+value = "value * 4096 / 1000000"
+group = "Reader/Writer"
+
+[[row]]
+id = "Reader/Writer writer.putUint8 x4096"
+label = "writer putUint8"
+note = "1 byte - fixed destination"
+unit = "MiB/s"
+value = "value * 4096 / 1048576"
+group = "Reader/Writer"

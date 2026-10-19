@@ -5,6 +5,7 @@
 library;
 
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:io_uring/io_uring.dart';
@@ -33,8 +34,20 @@ final class UringBytesFile implements BytesFile {
   bool _closed = false;
   final List<UringBuffer> _bufferPool = <UringBuffer>[];
   final Set<UringBuffer> _busyBuffers = <UringBuffer>{};
+  final List<UringBuffer> _fixedBuffers = <UringBuffer>[];
+  final Map<UringBuffer, int> _fixedIndices = <UringBuffer, int>{};
+  final Set<UringBuffer> _fixedBusy = <UringBuffer>{};
+
+  static const int _fixedBufferSize = 8 << 20;
+  static const int _fixedBufferCount = 4;
 
   UringBuffer _acquireBuffer(int length) {
+    for (final buffer in _fixedBuffers) {
+      if (!_fixedBusy.contains(buffer) && buffer.length >= length) {
+        _fixedBusy.add(buffer);
+        return buffer;
+      }
+    }
     for (final buffer in _bufferPool) {
       if (!_busyBuffers.contains(buffer) && buffer.length >= length) {
         _busyBuffers.add(buffer);
@@ -48,7 +61,64 @@ final class UringBytesFile implements BytesFile {
   }
 
   void _releaseBuffer(UringBuffer buffer) {
+    _fixedBusy.remove(buffer);
     _busyBuffers.remove(buffer);
+  }
+
+  UringOp _readOp(UringBuffer buffer, int length, int offset) {
+    final index = _fixedIndices[buffer];
+    if (index != null) {
+      return ReadFixedOp(
+        fd: _fd,
+        buffer: buffer.pointer,
+        length: length,
+        offset: offset,
+        bufIndex: index,
+      );
+    }
+    return ReadOp(
+      fd: _fd,
+      buffer: buffer.pointer,
+      length: length,
+      offset: offset,
+    );
+  }
+
+  UringOp _writeOp(UringBuffer buffer, int length, int offset) {
+    final index = _fixedIndices[buffer];
+    if (index != null) {
+      return WriteFixedOp(
+        fd: _fd,
+        buffer: buffer.pointer,
+        length: length,
+        offset: offset,
+        bufIndex: index,
+      );
+    }
+    return WriteOp(
+      fd: _fd,
+      buffer: buffer.pointer,
+      length: length,
+      offset: offset,
+    );
+  }
+
+  void _registerFixedBuffers(int entries) {
+    final count = math.min(entries, _fixedBufferCount);
+    try {
+      for (var i = 0; i < count; i++) {
+        final buffer = UringBuffer.allocate(_fixedBufferSize);
+        _fixedBuffers.add(buffer);
+        _fixedIndices[buffer] = i;
+      }
+      _loop.ring.registerBuffers(_fixedBuffers);
+    } on Object {
+      for (final buffer in _fixedBuffers) {
+        buffer.dispose();
+      }
+      _fixedBuffers.clear();
+      _fixedIndices.clear();
+    }
   }
 
   /// Opens [path] on Linux using io_uring.
@@ -74,7 +144,9 @@ final class UringBytesFile implements BytesFile {
     try {
       loop = await UringLoop.open(entries: entries);
       final length = File(path).lengthSync();
-      return UringBytesFile._(path, readOnly, fd, loop, length);
+      final file = UringBytesFile._(path, readOnly, fd, loop, length);
+      file._registerFixedBuffers(entries);
+      return file;
     } on Object {
       if (loop != null) await loop.close();
       Posix.close(fd);
@@ -100,9 +172,7 @@ final class UringBytesFile implements BytesFile {
     if (count == 0) return 0;
     final buffer = _acquireBuffer(count);
     try {
-      final cqe = await _loop.run(
-        ReadOp(fd: _fd, buffer: buffer.pointer, length: count, offset: offset),
-      );
+      final cqe = await _loop.run(_readOp(buffer, count, offset));
       if (cqe.isError) {
         throw IoUringException.fromCompletion(cqe.result, operation: 'read');
       }
@@ -130,9 +200,7 @@ final class UringBytesFile implements BytesFile {
     final buffer = _acquireBuffer(count);
     try {
       buffer.bytes.setRange(0, count, src, start);
-      final cqe = await _loop.run(
-        WriteOp(fd: _fd, buffer: buffer.pointer, length: count, offset: offset),
-      );
+      final cqe = await _loop.run(_writeOp(buffer, count, offset));
       if (cqe.isError) {
         throw IoUringException.fromCompletion(cqe.result, operation: 'write');
       }
@@ -163,14 +231,7 @@ final class UringBytesFile implements BytesFile {
         if (offset < 0) throw RangeError.value(offset, 'offset');
         final buffer = _acquireBuffer(blockSize);
         buffers.add(buffer);
-        ops.add(
-          ReadOp(
-            fd: _fd,
-            buffer: buffer.pointer,
-            length: blockSize,
-            offset: offset,
-          ),
-        );
+        ops.add(_readOp(buffer, blockSize, offset));
       }
       final completions = await Future.wait(_loop.runAll(ops));
       final result = <int>[];
@@ -211,14 +272,7 @@ final class UringBytesFile implements BytesFile {
         if (data.isNotEmpty) {
           buffer.bytes.setRange(0, data.length, data);
         }
-        ops.add(
-          WriteOp(
-            fd: _fd,
-            buffer: buffer.pointer,
-            length: data.length,
-            offset: offset,
-          ),
-        );
+        ops.add(_writeOp(buffer, data.length, offset));
       }
       final completions = await Future.wait(_loop.runAll(ops));
       final result = <int>[];
@@ -275,6 +329,12 @@ final class UringBytesFile implements BytesFile {
       }
       _bufferPool.clear();
       _busyBuffers.clear();
+      for (final buffer in _fixedBuffers) {
+        buffer.dispose();
+      }
+      _fixedBuffers.clear();
+      _fixedIndices.clear();
+      _fixedBusy.clear();
     }
   }
 

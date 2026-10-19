@@ -20,10 +20,10 @@ final class BytesMut implements BytesLike {
   bool _frozen;
 
   BytesMut([int capacity = 0])
-      : _data = Uint8List(capacity < 0 ? 0 : capacity),
-        _start = 0,
-        _length = 0,
-        _frozen = false;
+    : _data = Uint8List(capacity < 0 ? 0 : capacity),
+      _start = 0,
+      _length = 0,
+      _frozen = false;
 
   /// Copies [bytes] into a new buffer.
   factory BytesMut.fromBytes(Bytes bytes, {int? capacity}) {
@@ -106,34 +106,70 @@ final class BytesMut implements BytesLike {
   }
 
   /// Returns the first [at] bytes as an immutable view and advances self.
+  ///
+  /// The returned view is copy-on-write protected: the next [BytesMut]
+  /// mutation copies the remaining range instead of overwriting shared storage.
   Bytes splitTo(int at) {
     if (at < 0 || at > _length) {
       throw RangeError.range(at, 0, _length, 'at');
     }
     final out = Bytes.view(_data, _start, at);
+    _frozen = true;
     _start += at;
     _length -= at;
     return out;
   }
 
   /// Returns `[at, length)` as an immutable view; self keeps `[0, at)`.
+  ///
+  /// The returned view is copy-on-write protected: the next [BytesMut]
+  /// mutation copies the remaining range instead of overwriting shared storage.
   Bytes splitOff(int at) {
     if (at < 0 || at > _length) {
       throw RangeError.range(at, 0, _length, 'at');
     }
     final out = Bytes.view(_data, _start + at, _length - at);
+    _frozen = true;
     _length = at;
     return out;
   }
 
-  void putUint8(int value) {
-    _ensureWritable(1);
+  /// Appends one byte without a capacity check.
+  ///
+  /// The caller must have reserved enough capacity (for example with
+  /// [reserve]); this is the hot-path variant for bit writers.
+  void putUint8Unchecked(int value) {
     _data[_start + _length] = value & 0xFF;
     _length++;
   }
 
-  void putUint16(int value, {Endian endian = Endian.big}) {
-    _ensureWritable(2);
+  /// Ensures room for [count] more bytes and returns a writable tail view.
+  ///
+  /// The returned view aliases this buffer's storage and is not reflected in
+  /// [length] until [advance] is called. This lets bit writers append directly
+  /// with a `Uint8List` and an offset instead of one `putUint8` call per byte.
+  Uint8List spareView(int count) {
+    if (count < 0) throw RangeError.value(count, 'count');
+    _ensureWritable(count);
+    final base = _start + _length;
+    return Uint8List.sublistView(_data, base, base + count);
+  }
+
+  /// Commits [count] bytes previously written through [spareView].
+  void advance(int count) {
+    if (count < 0 || _length + count > _data.length - _start) {
+      throw RangeError.value(count, 'count');
+    }
+    _length += count;
+  }
+
+  void putUint8(int value) {
+    _ensureWritable(1);
+    putUint8Unchecked(value);
+  }
+
+  /// Appends two bytes without a capacity check.
+  void putUint16Unchecked(int value, {Endian endian = Endian.big}) {
     final i = _start + _length;
     if (endian == Endian.big) {
       _data[i] = (value ~/ 256) & 0xFF;
@@ -145,8 +181,13 @@ final class BytesMut implements BytesLike {
     _length += 2;
   }
 
-  void putUint32(int value, {Endian endian = Endian.big}) {
-    _ensureWritable(4);
+  void putUint16(int value, {Endian endian = Endian.big}) {
+    _ensureWritable(2);
+    putUint16Unchecked(value, endian: endian);
+  }
+
+  /// Appends four bytes without a capacity check.
+  void putUint32Unchecked(int value, {Endian endian = Endian.big}) {
     final i = _start + _length;
     if (endian == Endian.big) {
       _data[i] = (value ~/ 0x1000000) & 0xFF;
@@ -162,40 +203,70 @@ final class BytesMut implements BytesLike {
     _length += 4;
   }
 
+  void putUint32(int value, {Endian endian = Endian.big}) {
+    _ensureWritable(4);
+    putUint32Unchecked(value, endian: endian);
+  }
+
+  /// Appends eight bytes without a capacity check.
+  void putUint64Unchecked(Uint64 value, {Endian endian = Endian.big}) {
+    if (endian == Endian.big) {
+      putUint32Unchecked(value.hi);
+      putUint32Unchecked(value.lo);
+    } else {
+      putUint32Unchecked(value.lo, endian: Endian.little);
+      putUint32Unchecked(value.hi, endian: Endian.little);
+    }
+  }
+
   void putUint64(Uint64 value, {Endian endian = Endian.big}) {
     _ensureWritable(8);
-    if (endian == Endian.big) {
-      putUint32(value.hi);
-      putUint32(value.lo);
-    } else {
-      putUint32(value.lo, endian: Endian.little);
-      putUint32(value.hi, endian: Endian.little);
-    }
+    putUint64Unchecked(value, endian: endian);
+  }
+
+  /// Appends a float64 without a capacity check.
+  void putFloat64Unchecked(double value, {Endian endian = Endian.big}) {
+    ByteData.sublistView(
+      _data,
+      _start + _length,
+      _start + _length + 8,
+    ).setFloat64(0, value, endian);
+    _length += 8;
   }
 
   void putFloat64(double value, {Endian endian = Endian.big}) {
     _ensureWritable(8);
-    ByteData.sublistView(_data, _start + _length, _start + _length + 8)
-        .setFloat64(0, value, endian);
-    _length += 8;
+    putFloat64Unchecked(value, endian: endian);
+  }
+
+  /// Appends [value]'s visible bytes without a capacity check.
+  void putBytesUnchecked(Bytes value) {
+    _data.setRange(
+      _start + _length,
+      _start + _length + value.length,
+      value.asUint8List(),
+    );
+    _length += value.length;
   }
 
   void putBytes(Bytes value) {
     _ensureWritable(value.length);
-    _data.setRange(
-        _start + _length, _start + _length + value.length, value.asUint8List());
+    putBytesUnchecked(value);
+  }
+
+  /// Appends a `List<int>` without a capacity check.
+  void putSliceUnchecked(List<int> value) {
+    _data.setRange(_start + _length, _start + _length + value.length, value);
     _length += value.length;
   }
 
   void putSlice(List<int> value) {
     _ensureWritable(value.length);
-    _data.setRange(_start + _length, _start + _length + value.length, value);
-    _length += value.length;
+    putSliceUnchecked(value);
   }
 
-  void putRepeated(int byte, int count) {
-    if (count < 0) throw RangeError.value(count, 'count');
-    _ensureWritable(count);
+  /// Appends [count] copies of [byte] without a capacity check.
+  void putRepeatedUnchecked(int byte, int count) {
     final b = byte & 0xFF;
     final base = _start + _length;
     for (var i = 0; i < count; i++) {
@@ -204,17 +275,28 @@ final class BytesMut implements BytesLike {
     _length += count;
   }
 
+  void putRepeated(int byte, int count) {
+    if (count < 0) throw RangeError.value(count, 'count');
+    _ensureWritable(count);
+    putRepeatedUnchecked(byte, count);
+  }
+
+  /// Writes [value] as [nbytes] big-endian bytes without a capacity check.
+  void putUintUnchecked(int value, int nbytes) {
+    for (var i = nbytes - 1; i >= 0; i--) {
+      _data[_start + _length + i] = value & 0xFF;
+      value = value ~/ 256;
+    }
+    _length += nbytes;
+  }
+
   /// Writes [value] as [nbytes] big-endian bytes (0..8).
   void putUint(int value, int nbytes) {
     if (nbytes < 0 || nbytes > 8) {
       throw RangeError.range(nbytes, 0, 8, 'nbytes');
     }
     _ensureWritable(nbytes);
-    for (var i = nbytes - 1; i >= 0; i--) {
-      _data[_start + _length + i] = value & 0xFF;
-      value = value ~/ 256;
-    }
-    _length += nbytes;
+    putUintUnchecked(value, nbytes);
   }
 
   Bytes toBytes() => Bytes.fromUint8List(Uint8List.fromList(asUint8List()));

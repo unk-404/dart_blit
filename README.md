@@ -68,6 +68,21 @@ abstract interface class BytesLike {
 
 Convert at the boundary, then stay on `Bytes` / `Uint8List` in hot loops.
 
+For tight bit writers, avoid one `putUint8` call per bit/byte. Reserve a tail
+once and write it as a `Uint8List`:
+
+```dart
+final buf = BytesMut(1 << 16);
+final tail = buf.spareView(4096);
+// write directly through tail[offset]
+buf.advance(4096);
+```
+
+`putUint8Unchecked` / `putUint16Unchecked` / `putUint32Unchecked` /
+`putUint64Unchecked` / `putFloat64Unchecked` and the array/repeated variants
+are available when capacity is already guaranteed. `Bytes.getUint8Unchecked`
+and the wider unchecked getters are the corresponding read-side fast paths.
+
 ### Encoding
 
 ```dart
@@ -117,6 +132,16 @@ region.prefetch(offset: 0, length: 1 << 20);
 region.flush();
 region.close();
 file.close();
+```
+
+For framework/buffer-pool hot paths, read/write caller-owned native memory
+directly (no scratch copy, no transparent mmap cache):
+
+```dart
+final scratch = calloc<Uint8>(1 << 20);
+file.writeAtPointer(0, scratch, 1 << 20);
+file.readAtPointer(0, scratch, 1 << 20);
+calloc.free(scratch);
 ```
 
 Mapped windows support `prefetch()` / `discard()` hints. File-level helpers
@@ -244,7 +269,13 @@ The benchmark card above compares Dart with the C counterpart in
 six single-thread operations: 8 MiB sequential read/write, 4 KiB random
 pread/pwrite, and 4 KiB random mmap read/write. Dart-only pool, large-file and
 IOCP rows keep a placeholder C track because they have no C counterpart by
-design.
+design; the C file rows also perform the same scratch copy as `readAt`/`writeAt`.
+
+The same card includes core `Bytes` / `BytesMut` / reader / writer rows from
+[`benchmark/bytes_benchmarks_test.dart`](benchmark/bytes_benchmarks_test.dart),
+including a raw `Uint8List` baseline. Those rows are Dart-only and use a
+placeholder C track; they are not a language comparison. CI runs this suite
+alongside the native benchmarks.
 
 The card is generated from the `benchmark/` suite with
 [`bench-svg`](https://github.com/unk-404/benchmark_svg). Raw JSONL/SVG artifacts

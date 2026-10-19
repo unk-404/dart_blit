@@ -25,8 +25,16 @@ void main() {
     });
 
     test('uint16/uint32 big and little endian', () {
-      final b = Bytes.fromList(
-          [0x01, 0x02, 0x03, 0x04, 0xFF, 0xFF, 0xFF, 0xFF]);
+      final b = Bytes.fromList([
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+      ]);
       expect(b.getUint16(0), 0x0102);
       expect(b.getUint16(0, endian: Endian.little), 0x0201);
       expect(b.getUint32(0), 0x01020304);
@@ -78,7 +86,9 @@ void main() {
     });
 
     test('freeze view is stable after mutation (copy-on-write)', () {
-      final m = BytesMut(2)..putUint8(1)..putUint8(2);
+      final m = BytesMut(2)
+        ..putUint8(1)
+        ..putUint8(2);
       final frozen = m.freeze();
       m.putUint8(3);
       expect(frozen.toUint8List(), [1, 2]);
@@ -96,6 +106,63 @@ void main() {
       expect(tail.toUint8List(), [5]);
     });
 
+    test('splitTo view survives later mutation (copy-on-write)', () {
+      final m = BytesMut.fromUint8List(Uint8List.fromList([1, 2, 3, 4]));
+      final head = m.splitTo(2);
+      m.putUint8(9);
+      expect(head.toUint8List(), [1, 2]);
+      expect(m.toUint8List(), [3, 4, 9]);
+    });
+
+    test('splitOff view survives later mutation (copy-on-write)', () {
+      final m = BytesMut.fromUint8List(Uint8List.fromList([1, 2, 3, 4]));
+      final tail = m.splitOff(2);
+      m.putUint8(9);
+      expect(tail.toUint8List(), [3, 4]);
+      expect(m.toUint8List(), [1, 2, 9]);
+    });
+
+    test('spareView + advance and unchecked append', () {
+      final m = BytesMut(8);
+      final spare = m.spareView(4);
+      spare[0] = 1;
+      spare[1] = 2;
+      spare[2] = 3;
+      spare[3] = 4;
+      m.advance(4);
+      expect(m.toUint8List(), [1, 2, 3, 4]);
+      m.putUint8Unchecked(5);
+      expect(m.toUint8List(), [1, 2, 3, 4, 5]);
+    });
+
+    test('unchecked put variants match checked variants', () {
+      final checked = BytesMut(128);
+      final unchecked = BytesMut(128);
+      final value = Uint64(0x11223344, 0x55667788);
+      final bytes = Bytes.fromList([9, 8, 7]);
+      checked
+        ..putUint8(0xAB)
+        ..putUint16(0x1234)
+        ..putUint32(0xDEADBEEF)
+        ..putUint64(value)
+        ..putFloat64(1.5)
+        ..putBytes(bytes)
+        ..putSlice([6, 5, 4])
+        ..putRepeated(0x7E, 3)
+        ..putUint(0x010203, 3);
+      unchecked
+        ..putUint8Unchecked(0xAB)
+        ..putUint16Unchecked(0x1234)
+        ..putUint32Unchecked(0xDEADBEEF)
+        ..putUint64Unchecked(value)
+        ..putFloat64Unchecked(1.5)
+        ..putBytesUnchecked(bytes)
+        ..putSliceUnchecked([6, 5, 4])
+        ..putRepeatedUnchecked(0x7E, 3)
+        ..putUintUnchecked(0x010203, 3);
+      expect(unchecked.toUint8List(), checked.toUint8List());
+    });
+
     test('grows and compacts', () {
       final m = BytesMut(1);
       for (var i = 0; i < 100; i++) {
@@ -111,8 +178,7 @@ void main() {
     test('uint64 little-endian put/get roundtrip', () {
       const v = Uint64(0x11223344, 0x55667788);
       final m = BytesMut()..putUint64(v, endian: Endian.little);
-      expect(m.toUint8List(),
-          [0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11]);
+      expect(m.toUint8List(), [0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11]);
       expect(m.freeze().getUint64(0, endian: Endian.little), v);
 
       final dst = Uint8List(8);
@@ -164,28 +230,60 @@ void main() {
       final data = Uint8List.fromList(List<int>.generate(64, (i) => i * 7));
       final bytes = Bytes.fromUint8List(data);
       expect(bytes.getUint8Unchecked(3), bytes.getUint8(3));
-      expect(bytes.getUint16Unchecked(3, endian: Endian.big),
-          bytes.getUint16(3, endian: Endian.big));
-      expect(bytes.getUint16Unchecked(3, endian: Endian.little),
-          bytes.getUint16(3, endian: Endian.little));
-      expect(bytes.getUint32Unchecked(5, endian: Endian.big),
-          bytes.getUint32(5, endian: Endian.big));
-      expect(bytes.getUint32Unchecked(5, endian: Endian.little),
-          bytes.getUint32(5, endian: Endian.little));
+      expect(
+        bytes.getUint16Unchecked(3, endian: Endian.big),
+        bytes.getUint16(3, endian: Endian.big),
+      );
+      expect(
+        bytes.getUint16Unchecked(3, endian: Endian.little),
+        bytes.getUint16(3, endian: Endian.little),
+      );
+      expect(
+        bytes.getUint32Unchecked(5, endian: Endian.big),
+        bytes.getUint32(5, endian: Endian.big),
+      );
+      expect(
+        bytes.getUint32Unchecked(5, endian: Endian.little),
+        bytes.getUint32(5, endian: Endian.little),
+      );
+      expect(
+        bytes.getUint64Unchecked(5, endian: Endian.big),
+        bytes.getUint64(5, endian: Endian.big),
+      );
+      expect(
+        bytes.getUint64Unchecked(5, endian: Endian.little),
+        bytes.getUint64(5, endian: Endian.little),
+      );
+      expect(
+        bytes.getFloat32Unchecked(5, endian: Endian.little),
+        bytes.getFloat32(5, endian: Endian.little),
+      );
+      expect(
+        bytes.getFloat64Unchecked(5, endian: Endian.big),
+        bytes.getFloat64(5, endian: Endian.big),
+      );
 
       final reader = BytesReader(bytes);
       expect(reader.readUint8Unchecked(), bytes.getUint8(0));
-      expect(reader.readUint16Unchecked(endian: Endian.little),
-          bytes.getUint16(1, endian: Endian.little));
-      expect(reader.readUint32Unchecked(endian: Endian.big),
-          bytes.getUint32(3, endian: Endian.big));
-      expect(reader.readUint64Unchecked(endian: Endian.big),
-          bytes.getUint64(7, endian: Endian.big));
+      expect(
+        reader.readUint16Unchecked(endian: Endian.little),
+        bytes.getUint16(1, endian: Endian.little),
+      );
+      expect(
+        reader.readUint32Unchecked(endian: Endian.big),
+        bytes.getUint32(3, endian: Endian.big),
+      );
+      expect(
+        reader.readUint64Unchecked(endian: Endian.big),
+        bytes.getUint64(7, endian: Endian.big),
+      );
       expect(reader.position, 15);
 
       final le = BytesReader(bytes, 7);
-      expect(le.readUint64Unchecked(endian: Endian.little),
-          bytes.getUint64(7, endian: Endian.little));
+      expect(
+        le.readUint64Unchecked(endian: Endian.little),
+        bytes.getUint64(7, endian: Endian.little),
+      );
       expect(le.position, 15);
     });
   });

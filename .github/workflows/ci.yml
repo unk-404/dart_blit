@@ -213,11 +213,28 @@ jobs:
             exit $code
           }
 
+      - name: Benchmark core bytes
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/bytes_benchmarks_test.dart 2> bench-bytes.stderr.log
+          $code = $LASTEXITCODE
+          $output | Where-Object { $_ -match '^\s*\{' } |
+            Set-Content -Encoding utf8 bench-bytes.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) {
+            if (Test-Path bench-bytes.stderr.log) {
+              Write-Host '--- bytes benchmark stderr ---'
+              Get-Content bench-bytes.stderr.log
+            }
+            exit $code
+          }
+
       - name: Combine Dart benchmark data
         shell: pwsh
         run: |
-          Get-Content bench-core.jsonl, bench-random.jsonl, bench-iocp.jsonl |
-            Set-Content -Encoding utf8 bench-dart.jsonl
+          Get-Content bench-core.jsonl, bench-random.jsonl, bench-iocp.jsonl, `
+            bench-bytes.jsonl | Set-Content -Encoding utf8 bench-dart.jsonl
 
       - name: Benchmark C counterpart
         shell: pwsh

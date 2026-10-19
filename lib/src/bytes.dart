@@ -45,7 +45,10 @@ final class Bytes implements Comparable<Bytes>, BytesLike {
   /// Shares the underlying buffer of [data] (zero copy).
   factory Bytes.fromByteData(ByteData data) {
     final view = Uint8List.view(
-        data.buffer, data.offsetInBytes, data.lengthInBytes);
+      data.buffer,
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
     return Bytes._(view, 0, view.length);
   }
 
@@ -178,19 +181,50 @@ final class Bytes implements Comparable<Bytes>, BytesLike {
     return Uint64.readFrom(asByteData(), index, endian: endian);
   }
 
+  /// Reads eight bytes without a bounds check.
+  Uint64 getUint64Unchecked(int index, {Endian endian = Endian.big}) {
+    if (endian == Endian.big) {
+      return Uint64(getUint32Unchecked(index), getUint32Unchecked(index + 4));
+    }
+    return Uint64(
+      getUint32Unchecked(index + 4, endian: Endian.little),
+      getUint32Unchecked(index, endian: Endian.little),
+    );
+  }
+
   double getFloat64(int index, {Endian endian = Endian.big}) {
     _check(index, 8);
     return ByteData.sublistView(
-            _buffer, _offset + index, _offset + index + 8)
-        .getFloat64(0, endian);
+      _buffer,
+      _offset + index,
+      _offset + index + 8,
+    ).getFloat64(0, endian);
   }
+
+  /// Reads a float64 without a bounds check.
+  double getFloat64Unchecked(int index, {Endian endian = Endian.big}) =>
+      ByteData.sublistView(
+        _buffer,
+        _offset + index,
+        _offset + index + 8,
+      ).getFloat64(0, endian);
 
   double getFloat32(int index, {Endian endian = Endian.big}) {
     _check(index, 4);
     return ByteData.sublistView(
-            _buffer, _offset + index, _offset + index + 4)
-        .getFloat32(0, endian);
+      _buffer,
+      _offset + index,
+      _offset + index + 4,
+    ).getFloat32(0, endian);
   }
+
+  /// Reads a float32 without a bounds check.
+  double getFloat32Unchecked(int index, {Endian endian = Endian.big}) =>
+      ByteData.sublistView(
+        _buffer,
+        _offset + index,
+        _offset + index + 4,
+      ).getFloat32(0, endian);
 
   /// Copies this view into [dst] starting at [start].
   void copyTo(Uint8List dst, [int start = 0]) {

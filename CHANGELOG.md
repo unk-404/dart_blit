@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.3
+
+### Fixed
+
+- `BytesMut.splitTo` / `splitOff` now mark the source frozen, so the returned
+  views survive later `BytesMut` mutations (copy-on-write), matching the README.
+
+### Performance
+
+- Added `BytesMut.spareView` + `advance` and unchecked put variants for
+  uint8/uint16/uint32/uint64/float64/bytes/slice/repeated/uint; `Bytes` gained
+  unchecked uint64/float32/float64 reads.
+- Windows `IocpFile` reuses `OVERLAPPED` blocks and its single-request scratch
+  buffer instead of allocating per request.
+- Linux `UringBytesFile` registers a small fixed-buffer set and uses
+  `READ_FIXED` / `WRITE_FIXED`, falling back to normal ops when unsupported.
+- Added a core Bytes/BytesMut/reader/writer benchmark suite, including a raw
+  `Uint8List` baseline, merged into the main benchmark card.
+
+### Added
+
+- `MmapFile.readAtPointer` / `writeAtPointer` for caller-owned native buffers;
+  these bypass the typed-data scratch copy (and the transparent mmap cache).
+
 ## 0.1.2
 
 ### Performance

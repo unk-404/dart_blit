@@ -807,6 +807,61 @@ final class PosixMmapFile extends MmapFile {
   }
 
   @override
+  int readAtPointer(int offset, Pointer<Uint8> dst, int length) {
+    _checkOpen();
+    if (offset < 0) throw RangeError.value(offset, 'offset');
+    if (length < 0) throw RangeError.value(length, 'length');
+    if (length == 0) return 0;
+    if (offset >= _size) {
+      _size = _querySize();
+      if (offset >= _size) return 0;
+    }
+    final wanted = math.min(length, _size - offset);
+    if (direct &&
+        (offset % _directAlignment != 0 || wanted % _directAlignment != 0)) {
+      throw ArgumentError(
+        'Direct I/O read requires 4 KiB aligned offset and length '
+        '(offset=$offset, length=$wanted).',
+      );
+    }
+    var done = 0;
+    while (done < wanted) {
+      final maxChunk = direct ? _maxDirectChunk : _maxIoChunk;
+      final n = math.min(wanted - done, maxChunk);
+      final got = _readChunk(offset + done, dst + done, n);
+      if (got <= 0) break;
+      done += got;
+      if (got < n) break;
+    }
+    return done;
+  }
+
+  @override
+  int writeAtPointer(int offset, Pointer<Uint8> src, int length) {
+    _checkWritable();
+    if (offset < 0) throw RangeError.value(offset, 'offset');
+    if (length < 0) throw RangeError.value(length, 'length');
+    if (length == 0) return 0;
+    if (direct &&
+        (offset % _directAlignment != 0 || length % _directAlignment != 0)) {
+      throw ArgumentError(
+        'Direct I/O write requires 4 KiB aligned offset and length '
+        '(offset=$offset, length=$length).',
+      );
+    }
+    var done = 0;
+    while (done < length) {
+      final maxChunk = direct ? _maxDirectChunk : _maxIoChunk;
+      final n = math.min(length - done, maxChunk);
+      final put = _writeChunk(offset + done, src + done, n);
+      done += put;
+      if (put < n) break;
+    }
+    if (offset + done > _size) _size = offset + done;
+    return done;
+  }
+
+  @override
   void truncate(int newLength, {bool sparse = true}) {
     _checkWritable();
     if (newLength < 0) throw RangeError.value(newLength, 'newLength');

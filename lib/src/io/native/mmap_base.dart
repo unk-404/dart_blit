@@ -5,6 +5,7 @@
 /// lengths are 64-bit `int`s on native.
 library;
 
+import 'dart:ffi';
 import 'dart:typed_data';
 
 /// A zero-copy mapped window over a file.
@@ -84,6 +85,20 @@ abstract class MmapFile {
   /// Writes `src[start..end)` at [offset]; returns bytes written.
   int writeAt(int offset, Uint8List src, {int start = 0, int? end});
 
+  /// Reads into caller-owned native memory, bypassing the typed-data copy.
+  ///
+  /// This is the hot-path variant for framework/buffer-pool callers.  The
+  /// destination must stay valid for the duration of the call and, for direct
+  /// I/O, be 4 KiB aligned.  The transparent mmap cache is bypassed.
+  int readAtPointer(int offset, Pointer<Uint8> dst, int length) =>
+      throw UnsupportedError('readAtPointer is not supported on this backend');
+
+  /// Writes from caller-owned native memory, bypassing the typed-data copy.
+  ///
+  /// See [readAtPointer] for alignment and lifetime requirements.
+  int writeAtPointer(int offset, Pointer<Uint8> src, int length) =>
+      throw UnsupportedError('writeAtPointer is not supported on this backend');
+
   /// Changes logical length.  [sparse] marks the file sparse on Windows before
   /// extending, so that later far-offset writes do not zero-fill the gap.
   void truncate(int newLength, {bool sparse = true});
@@ -112,8 +127,9 @@ abstract class MmapFile {
     int sourceOffset = 0,
     int destOffset = 0,
     int? length,
-  }) =>
-      throw UnsupportedError('cloneRangeFrom is not supported on this platform');
+  }) => throw UnsupportedError(
+    'cloneRangeFrom is not supported on this platform',
+  );
 
   /// Preallocates physical space for at least [length] bytes.
   ///
@@ -131,17 +147,25 @@ abstract class MmapFile {
 
   Future<int> get lengthAsync async => length;
 
-  Future<MappedRegion> mapAsync(
-          {int offset = 0, int? length, bool writable = true}) async =>
-      map(offset: offset, length: length, writable: writable);
+  Future<MappedRegion> mapAsync({
+    int offset = 0,
+    int? length,
+    bool writable = true,
+  }) async => map(offset: offset, length: length, writable: writable);
 
-  Future<int> readAtAsync(int offset, Uint8List dst,
-          {int start = 0, int? end}) async =>
-      readAt(offset, dst, start: start, end: end);
+  Future<int> readAtAsync(
+    int offset,
+    Uint8List dst, {
+    int start = 0,
+    int? end,
+  }) async => readAt(offset, dst, start: start, end: end);
 
-  Future<int> writeAtAsync(int offset, Uint8List src,
-          {int start = 0, int? end}) async =>
-      writeAt(offset, src, start: start, end: end);
+  Future<int> writeAtAsync(
+    int offset,
+    Uint8List src, {
+    int start = 0,
+    int? end,
+  }) async => writeAt(offset, src, start: start, end: end);
 
   Future<void> truncateAsync(int newLength, {bool sparse = true}) async =>
       truncate(newLength, sparse: sparse);
@@ -160,8 +184,7 @@ abstract interface class MmapPlaceholder {
   int get baseAddress;
 
   /// Maps [file]'s `[offset, offset + length)` into this placeholder.
-  MappedRegion map(MmapFile file,
-      {int offset = 0, bool writable = true});
+  MappedRegion map(MmapFile file, {int offset = 0, bool writable = true});
 
   /// Releases the placeholder and its current view; idempotent.
   void close();

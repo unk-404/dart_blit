@@ -316,13 +316,23 @@ final class IocpFile {
   final int _handle;
   final int _iocp;
   final Map<int, int> _outstanding = <int, int>{};
+  final List<Pointer<Uint8>> _overlappedPool = <Pointer<Uint8>>[];
 
   /// OVERLAPPED blocks for reads that failed with `ERROR_HANDLE_EOF`.  They
   /// are only released after the handles are closed (see [close]).
-  final List<int> _parkedOverlapped = <int>[];
+  final List<Pointer<Uint8>> _parkedOverlapped = <Pointer<Uint8>>[];
 
   int _length = 0;
   bool _closed = false;
+  Pointer<Uint8> _ioScratch = nullptr;
+  int _ioScratchCapacity = 0;
+
+  void _ensureIoScratch(int capacity) {
+    if (capacity <= _ioScratchCapacity) return;
+    if (_ioScratch.address != 0) calloc.free(_ioScratch);
+    _ioScratch = calloc<Uint8>(capacity);
+    _ioScratchCapacity = capacity;
+  }
 
   /// File path this handle was opened for.
   final String path;
@@ -443,13 +453,27 @@ final class IocpFile {
     if (readOnly) throw StateError('File is read-only: $path');
   }
 
+  /// Obtains a zeroed OVERLAPPED block, reusing a completed one when possible.
+  Pointer<Uint8> _acquireOverlapped() {
+    final pointer = _overlappedPool.isEmpty
+        ? calloc<Uint8>(_overlappedSize)
+        : _overlappedPool.removeLast();
+    // The kernel and completion path may leave Internal/InternalHigh dirty.
+    pointer.asTypedList(_overlappedSize).fillRange(0, _overlappedSize, 0);
+    return pointer;
+  }
+
+  void _releaseOverlapped(Pointer<Uint8> pointer) {
+    _overlappedPool.add(pointer);
+  }
+
   /// Submits one overlapped operation.
   ///
   /// Returns `true` when a completion packet is expected (always, except for a
   /// read that fails immediately with `ERROR_HANDLE_EOF`, which Windows does
   /// not queue).
   bool _submit(_BatchRequest request) {
-    final overlapped = calloc<Uint8>(_overlappedSize);
+    final overlapped = _acquireOverlapped();
     // OFFSET is written as two DWORDs at byte 16 / 20 of the zeroed block.
     final fields = overlapped.cast<Uint32>();
     fields[4] = request.offset & 0xFFFFFFFF;
@@ -490,12 +514,12 @@ final class IocpFile {
       // OVERLAPPED is parked and freed only after the handle is closed, so a
       // late packet can never scribble on reused memory.
       _outstanding.remove(overlapped.address);
-      _parkedOverlapped.add(overlapped.address);
+      _parkedOverlapped.add(overlapped);
       request.completedBytes = 0;
       return false;
     }
     _outstanding.remove(overlapped.address);
-    calloc.free(overlapped);
+    _releaseOverlapped(overlapped);
     throw IocpException(
       request.isWrite ? 'WriteFile' : 'ReadFile',
       err,
@@ -555,7 +579,7 @@ final class IocpFile {
           // Windows may still reference.
           continue;
         }
-        calloc.free(overlapped.cast<Uint8>());
+        _releaseOverlapped(overlapped.cast<Uint8>());
         final request = requests[index];
         if (ok != 0) {
           request.completedBytes = bytes.value;
@@ -604,7 +628,7 @@ final class IocpFile {
         final overlapped = slot.value;
         if (overlapped.address == 0) return; // Port unusable; stop waiting.
         if (_outstanding.remove(overlapped.address) != null) {
-          calloc.free(overlapped.cast<Uint8>());
+          _releaseOverlapped(overlapped.cast<Uint8>());
         }
       }
     } finally {
@@ -733,27 +757,20 @@ final class IocpFile {
     // Bounded scratch: a single huge read is chunked instead of duplicating
     // the whole destination in native memory.
     final capacity = math.min(wanted, _scratchChunk);
-    final scratch = calloc<Uint8>(capacity);
-    try {
-      var done = 0;
-      while (done < wanted) {
-        final chunk = math.min(wanted - done, capacity);
-        final request = _BatchRequest(0, offset + done, scratch, chunk, false);
-        _runBatch(<_BatchRequest>[request]);
-        final got = request.completedBytes;
-        if (got <= 0) break;
-        dst.setRange(
-          start + done,
-          start + done + got,
-          scratch.asTypedList(got),
-        );
-        done += got;
-        if (got < chunk) break;
-      }
-      return done;
-    } finally {
-      calloc.free(scratch);
+    _ensureIoScratch(capacity);
+    final scratch = _ioScratch;
+    var done = 0;
+    while (done < wanted) {
+      final chunk = math.min(wanted - done, capacity);
+      final request = _BatchRequest(0, offset + done, scratch, chunk, false);
+      _runBatch(<_BatchRequest>[request]);
+      final got = request.completedBytes;
+      if (got <= 0) break;
+      dst.setRange(start + done, start + done + got, scratch.asTypedList(got));
+      done += got;
+      if (got < chunk) break;
     }
+    return done;
   }
 
   /// Writes `src[start..end)` at [offset] and returns the number of bytes
@@ -766,23 +783,20 @@ final class IocpFile {
     final wanted = stop - start;
     if (wanted == 0) return 0;
     final capacity = math.min(wanted, _scratchChunk);
-    final scratch = calloc<Uint8>(capacity);
-    try {
-      var done = 0;
-      while (done < wanted) {
-        final chunk = math.min(wanted - done, capacity);
-        scratch.asTypedList(chunk).setRange(0, chunk, src, start + done);
-        final request = _BatchRequest(0, offset + done, scratch, chunk, true);
-        _runBatch(<_BatchRequest>[request]);
-        final put = request.completedBytes;
-        done += put;
-        if (put < chunk) break;
-      }
-      if (offset + done > _length) _length = offset + done;
-      return done;
-    } finally {
-      calloc.free(scratch);
+    _ensureIoScratch(capacity);
+    final scratch = _ioScratch;
+    var done = 0;
+    while (done < wanted) {
+      final chunk = math.min(wanted - done, capacity);
+      scratch.asTypedList(chunk).setRange(0, chunk, src, start + done);
+      final request = _BatchRequest(0, offset + done, scratch, chunk, true);
+      _runBatch(<_BatchRequest>[request]);
+      final put = request.completedBytes;
+      done += put;
+      if (put < chunk) break;
     }
+    if (offset + done > _length) _length = offset + done;
+    return done;
   }
 
   /// Sets the file length, optionally marking the file sparse first.
@@ -842,10 +856,19 @@ final class IocpFile {
     _win.closeHandle(_iocp);
     // No further completions can reach this port now, so parked OVERLAPPED
     // blocks can be released.
-    for (final address in _parkedOverlapped) {
-      calloc.free(Pointer<Uint8>.fromAddress(address));
+    for (final pointer in _parkedOverlapped) {
+      calloc.free(pointer);
     }
     _parkedOverlapped.clear();
+    for (final pointer in _overlappedPool) {
+      calloc.free(pointer);
+    }
+    _overlappedPool.clear();
+    if (_ioScratch.address != 0) {
+      calloc.free(_ioScratch);
+      _ioScratch = nullptr;
+      _ioScratchCapacity = 0;
+    }
   }
 
   @override
