@@ -239,7 +239,13 @@ avoids it. OPFS uses chunk files for the same reason.
 
 ## Performance
 
-The benchmark card above is generated from the `benchmark/` suite with
+The benchmark card above compares Dart with the C counterpart in
+[`benchmark/c/blit_bench.c`](benchmark/c/blit_bench.c). Both implement the same
+six single-thread operations: 8 MiB sequential read/write, 4 KiB random
+pread/pwrite, and 4 KiB random mmap read/write. Pool, IOCP and io_uring numbers
+are Dart-engine-specific and stay out of the C series.
+
+The card is generated from the `benchmark/` suite with
 [`bench-svg`](https://github.com/unk-404/benchmark_svg). Raw JSONL/SVG artifacts
 are produced by CI; the chart is deterministic and reflects the latest default
 branch run.

@@ -217,6 +217,43 @@ jobs:
             exit $code
           }
 
+      - name: Combine Dart benchmark data
+        shell: pwsh
+        run: |
+          Get-Content bench-core.jsonl, bench-random.jsonl, bench-iocp.jsonl |
+            Set-Content -Encoding utf8 bench-dart.jsonl
+
+      - name: Benchmark C counterpart
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (!(Test-Path $vswhere)) {
+            throw 'vswhere.exe not found; cannot locate MSVC'
+          }
+          $vs = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (!$vs) {
+            throw 'MSVC C++ tools not found'
+          }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdLine = 'call "' + $vcvars + '" >nul && cl /nologo /O2 /std:c11 benchmark\c\blit_bench.c /Fe:bench-c.exe'
+          cmd.exe /c $cmdLine
+          if ($LASTEXITCODE -ne 0) {
+            throw "C benchmark build failed with exit code $LASTEXITCODE"
+          }
+          # cmd.exe keeps native stdout ASCII; PowerShell 5.1's > writes UTF-16.
+          cmd.exe /c 'bench-c.exe bench-c.bin > bench-c.jsonl 2> bench-c.stderr.log'
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            if (Test-Path bench-c.stderr.log) {
+              Write-Host '--- C benchmark stderr ---'
+              Get-Content bench-c.stderr.log
+            }
+            exit $code
+          }
+          Remove-Item bench-c.bin -Force -ErrorAction SilentlyContinue
+
       - name: Render benchmark SVG
         # The action has no moving v1 tag; use its default branch and let the
         # action resolve the latest bench-svg release.
@@ -224,9 +261,8 @@ jobs:
         with:
           version: latest
           input: |
-            bench-core.jsonl
-            bench-random.jsonl
-            bench-iocp.jsonl
+            bench-dart.jsonl
+            bench-c.jsonl
           format: benchmark_test
           out: assets/benchmarks.svg
           config: bench-svg.toml

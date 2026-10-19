@@ -29,6 +29,8 @@
   non-isolated pages.
 - Benchmark SVG rendering now uses `bench-svg` (`bench-svg.toml` + the
   `unk-404/benchmark_svg` action) instead of a repo-local SVG generator.
+- Benchmark chart compares Dart with a C counterpart implementing the same
+  single-thread 8 MiB sequential and 4 KiB random/mmap operations.
 
 ## 0.1.0
 
