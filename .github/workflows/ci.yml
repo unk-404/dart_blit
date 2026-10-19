@@ -218,8 +218,11 @@ jobs:
           }
 
       - name: Render benchmark SVG
-        uses: unk-404/benchmark_svg@v1
+        # The action has no moving v1 tag; use its default branch and let the
+        # action resolve the latest bench-svg release.
+        uses: unk-404/benchmark_svg@master
         with:
+          version: latest
           input: |
             bench-core.jsonl
             bench-random.jsonl
