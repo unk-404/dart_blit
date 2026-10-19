@@ -120,10 +120,10 @@ skip the per-block `ReadFile`/`pread`. Set the limit to `0` to disable, or raise
 it for a hot file that fits comfortably in the address space. Mapping is
 virtual: cold pages still fault from disk.
 
-For streaming files larger than RAM, open with `direct: true` (Windows,
-`FILE_FLAG_NO_BUFFERING`). Offsets and lengths must be 4 KiB aligned; direct
-I/O bypasses the page cache and is intended for sequential copy/import/export,
-not 4 KiB random access:
+For streaming files larger than RAM, open with `direct: true` (Windows
+`FILE_FLAG_NO_BUFFERING`, Linux/Android `O_DIRECT`, macOS/iOS `F_NOCACHE`).
+Offsets and lengths must be 4 KiB aligned; direct I/O bypasses the page cache
+and is intended for sequential copy/import/export, not 4 KiB random access:
 
 ```dart
 final stream = openMmapFileSync('/tmp/big.bin', direct: true);

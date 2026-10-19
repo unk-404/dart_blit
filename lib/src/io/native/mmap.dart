@@ -8,20 +8,18 @@ export 'mmap_base.dart';
 
 /// Opens a native mmap file.  Synchronous; run in a worker isolate for UI code.
 ///
-/// [direct] uses `FILE_FLAG_NO_BUFFERING` on Windows and requires 4 KiB aligned
-/// offsets/lengths.  It is for streaming files larger than RAM; random 4 KiB
-/// access is much slower than the buffered/mmap path.  Other platforms throw
-/// [UnsupportedError] for [direct] until their direct-I/O path is implemented.
+/// [direct] uses `FILE_FLAG_NO_BUFFERING` on Windows, `O_DIRECT` on
+/// Linux/Android and `F_NOCACHE` on macOS/iOS.  It requires 4 KiB aligned
+/// offsets/lengths and is for streaming files larger than RAM; random 4 KiB
+/// access is much slower than the buffered/mmap path.
 Future<MmapFile> openMmapFile(String path,
     {bool create = true, bool readOnly = false, bool direct = false}) async {
   if (Platform.isWindows) {
     return WindowsMmapFile.open(
         path, create: create, readOnly: readOnly, direct: direct);
   }
-  if (direct) {
-    throw UnsupportedError('Direct I/O is not implemented on this platform.');
-  }
-  return PosixMmapFile.open(path, create: create, readOnly: readOnly);
+  return PosixMmapFile.open(
+      path, create: create, readOnly: readOnly, direct: direct);
 }
 
 /// Synchronous open.
@@ -31,8 +29,6 @@ MmapFile openMmapFileSync(String path,
     return WindowsMmapFile.openSync(
         path, create: create, readOnly: readOnly, direct: direct);
   }
-  if (direct) {
-    throw UnsupportedError('Direct I/O is not implemented on this platform.');
-  }
-  return PosixMmapFile.openSync(path, create: create, readOnly: readOnly);
+  return PosixMmapFile.openSync(
+      path, create: create, readOnly: readOnly, direct: direct);
 }

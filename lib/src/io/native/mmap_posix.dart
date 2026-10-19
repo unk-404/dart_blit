@@ -90,6 +90,10 @@ typedef _ExplicitBzero = void Function(Pointer<Void>, int);
 typedef _MemsetNative = Pointer<Void> Function(Pointer<Void>, Int32, Size);
 typedef _Memset = Pointer<Void> Function(Pointer<Void>, int, int);
 
+typedef _PosixMemalignNative = Int32 Function(
+    Pointer<Pointer<Void>>, Size, Size);
+typedef _PosixMemalign = int Function(Pointer<Pointer<Void>>, int, int);
+
 typedef _ErrnoNative = Pointer<Int32> Function();
 typedef _Errno = Pointer<Int32> Function();
 
@@ -111,7 +115,14 @@ const int _openRdonly = 0;
 const int _openRdwr = 2;
 final int _openCreat = _isDarwin ? 0x200 : 0x40;
 final int _openCloexec = _isDarwin ? 0x1000000 : 0x80000;
+final int _openDirect = _isDarwin ? 0 : 0x4000; // Linux/Android O_DIRECT
 const int _mode0644 = 0x1A4;
+
+// Darwin F_NOCACHE is 48 (XNU bsd/sys/fcntl.h); it disables the unified
+// buffer cache for the descriptor.  Linux/Android use O_DIRECT instead.
+const int _fNoCache = 48;
+const int _directAlignment = 4096;
+const int _maxDirectChunk = 8 << 20;
 
 // mman.h.  PROT_*, MAP_SHARED match on Linux and Darwin, but MS_SYNC does
 // not: Linux uses 0x4 while Darwin uses 0x10 (MS_ASYNC/MS_INVALIDATE are
@@ -246,6 +257,7 @@ class _Libc {
   late final _Getpagesize? _getpagesize;
   late final _Strerror strerror;
   late final _Memset memset;
+  late final _PosixMemalign posixMemalign;
   late final int pageSize;
 
   _Libc._(DynamicLibrary lib) {
@@ -298,6 +310,8 @@ class _Libc {
     explicitBzero = _tryNative<_ExplicitBzeroNative>(lib, 'explicit_bzero')
         ?.asFunction<_ExplicitBzero>();
     memset = lib.lookupFunction<_MemsetNative, _Memset>('memset');
+    posixMemalign = lib.lookupFunction<_PosixMemalignNative, _PosixMemalign>(
+        'posix_memalign');
     strerror = lib.lookupFunction<_StrerrorNative, _Strerror>('strerror');
 
     _errnoFn = _isDarwin
@@ -350,6 +364,7 @@ final class PosixMmapFile extends MmapFile {
   final _Libc _libc;
   final int _fd;
   final int _statusFlags;
+  final bool direct;
   final Set<PosixMappedRegion> _regions = <PosixMappedRegion>{};
   int _size;
   int _scratchCapacity = 0;
@@ -362,18 +377,20 @@ final class PosixMmapFile extends MmapFile {
   final bool readOnly;
 
   PosixMmapFile._(this._libc, this._fd, this.path, this.readOnly, this._size,
-      this._statusFlags);
+      this._statusFlags, this.direct);
 
   static Future<MmapFile> open(String path,
-          {bool create = true, bool readOnly = false}) async =>
-      openSync(path, create: create, readOnly: readOnly);
+          {bool create = true, bool readOnly = false, bool direct = false}) async =>
+      openSync(
+          path, create: create, readOnly: readOnly, direct: direct);
 
   static MmapFile openSync(String path,
-      {bool create = true, bool readOnly = false}) {
+      {bool create = true, bool readOnly = false, bool direct = false}) {
     final libc = _posixLibc;
     final int flags = (readOnly ? _openRdonly : _openRdwr) |
         (create ? _openCreat : 0) |
-        _openCloexec;
+        _openCloexec |
+        (_isDarwin ? 0 : (direct ? _openDirect : 0));
     final cPath = path.toNativeUtf8();
     final int fd;
     try {
@@ -382,11 +399,19 @@ final class PosixMmapFile extends MmapFile {
       malloc.free(cPath);
     }
     if (fd < 0) throw PosixException('open', libc.errno, path);
+    if (direct && _isDarwin) {
+      // F_NOCACHE is per-descriptor; it bypasses the unified buffer cache.
+      if (libc.fcntl(fd, _fNoCache, 1) < 0) {
+        final e = libc.errno;
+        libc.close(fd);
+        throw PosixException('fcntl(F_NOCACHE)', e, path);
+      }
+    }
     // Capture the descriptor's status flags once for diagnostics (and to
     // prove the fd really is not append-mode).
     final statusFlags = libc.fcntl(fd, _fGetfl, 0);
     final file = PosixMmapFile._(libc, fd, path, readOnly, 0,
-        statusFlags < 0 ? 0 : statusFlags);
+        statusFlags < 0 ? 0 : statusFlags, direct);
     try {
       file._size = file._querySize();
     } catch (_) {
@@ -433,6 +458,10 @@ final class PosixMmapFile extends MmapFile {
   @override
   MappedRegion map({int offset = 0, int? length, bool writable = true}) {
     _checkOpen();
+    if (direct) {
+      throw UnsupportedError(
+          'Direct I/O files cannot be memory-mapped; use readAt/writeAt.');
+    }
     if (writable && readOnly) {
       throw StateError('Cannot create a writable mapping for $path');
     }
@@ -481,21 +510,45 @@ final class PosixMmapFile extends MmapFile {
 
   void _ensureScratch(int needed) {
     if (needed <= _scratchCapacity) return;
-    if (_scratch.address != 0) {
-      calloc.free(_scratch);
-      _scratch = nullptr;
-    }
+    _freeScratch();
     var capacity = _scratchCapacity == 0 ? 1 << 20 : _scratchCapacity;
     while (capacity < needed) {
       capacity *= 2;
     }
-    _scratch = calloc<Uint8>(capacity);
+    if (direct) {
+      final out = calloc<Pointer<Void>>();
+      try {
+        final rc = _libc.posixMemalign(out, _directAlignment, capacity);
+        _scratch = out.value.cast<Uint8>();
+        if (rc != 0 || _scratch.address == 0) {
+          _scratch = nullptr;
+          _scratchCapacity = 0;
+          throw StateError('bytes: posix_memalign($capacity) failed ($rc) '
+              'for $path');
+        }
+      } finally {
+        calloc.free(out);
+      }
+    } else {
+      _scratch = calloc<Uint8>(capacity);
+    }
     if (_scratch.address == 0) {
       _scratchCapacity = 0;
       throw StateError('bytes: out of memory allocating $capacity-byte '
           'scratch buffer for $path');
     }
     _scratchCapacity = capacity;
+  }
+
+  void _freeScratch() {
+    if (_scratch.address == 0) return;
+    if (direct) {
+      malloc.free(_scratch);
+    } else {
+      calloc.free(_scratch);
+    }
+    _scratch = nullptr;
+    _scratchCapacity = 0;
   }
 
   int _readChunk(int offset, Pointer<Uint8> dst, int count) {
@@ -532,6 +585,27 @@ final class PosixMmapFile extends MmapFile {
     final wanted = math.min(e - start, _size - offset);
     if (wanted <= 0) return 0;
 
+    if (direct) {
+      if (offset % _directAlignment != 0 ||
+          wanted % _directAlignment != 0) {
+        throw ArgumentError(
+            'Direct I/O read requires 4 KiB aligned offset and length '
+            '(offset=$offset, length=$wanted).');
+      }
+      var done = 0;
+      while (done < wanted) {
+        final n = math.min(wanted - done, _maxDirectChunk);
+        _ensureScratch(n);
+        final got = _readChunk(offset + done, _scratch, n);
+        if (got <= 0) break;
+        dst.setRange(start + done, start + done + got,
+            _scratch.asTypedList(got));
+        done += got;
+        if (got < n) break;
+      }
+      return done;
+    }
+
     var done = 0;
     while (done < wanted) {
       final n = math.min(wanted - done, _maxIoChunk);
@@ -555,9 +629,18 @@ final class PosixMmapFile extends MmapFile {
     final wanted = e - start;
     if (wanted == 0) return 0;
 
+    if (direct &&
+        (offset % _directAlignment != 0 ||
+            wanted % _directAlignment != 0)) {
+      throw ArgumentError(
+          'Direct I/O write requires 4 KiB aligned offset and length '
+          '(offset=$offset, length=$wanted).');
+    }
+
     var done = 0;
     while (done < wanted) {
-      final n = math.min(wanted - done, _maxIoChunk);
+      final maxChunk = direct ? _maxDirectChunk : _maxIoChunk;
+      final n = math.min(wanted - done, maxChunk);
       _ensureScratch(n);
       _scratch.asTypedList(n).setRange(0, n, src, start + done);
       final put = _writeChunk(offset + done, _scratch, n);
@@ -643,11 +726,7 @@ final class PosixMmapFile extends MmapFile {
     if (_closed) return;
     _closed = true;
     _closeRegions();
-    if (_scratch.address != 0) {
-      calloc.free(_scratch);
-      _scratch = nullptr;
-      _scratchCapacity = 0;
-    }
+    _freeScratch();
     _libc.close(_fd);
   }
 

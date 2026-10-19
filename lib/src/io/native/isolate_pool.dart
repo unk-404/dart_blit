@@ -67,8 +67,10 @@ final class ParallelBytesFile implements BytesFile {
   /// synchronous, so more workers are how a caller gets more outstanding I/O.
   /// The 32 cap keeps isolate/mmap overhead bounded on very large machines.
   ///
-  /// [direct] uses `FILE_FLAG_NO_BUFFERING` in every worker (Windows) with
-  /// 4 KiB-aligned requests; use it for aligned streaming, not random access.
+  /// [direct] uses the platform direct-I/O path in every worker (Windows
+  /// `FILE_FLAG_NO_BUFFERING`, Linux/Android `O_DIRECT`, macOS/iOS
+  /// `F_NOCACHE`) with 4 KiB-aligned requests; use it for aligned streaming,
+  /// not random access.
   ///
   /// With [readOnly] and a file no larger than [mmapReadCacheLimit], each
   /// worker maps the whole file read-only once and serves reads from the map
@@ -86,9 +88,6 @@ final class ParallelBytesFile implements BytesFile {
   }) async {
     if (useIocp && direct) {
       throw ArgumentError('useIocp and direct are mutually exclusive');
-    }
-    if (direct && !Platform.isWindows) {
-      throw UnsupportedError('Direct I/O is not implemented on this platform.');
     }
     final workers = maxWorkers ??
         math.min(32, math.max(2, Platform.numberOfProcessors - 1));

@@ -15,9 +15,10 @@ First development release.
 - Native mmap engine: Windows `CreateFileMappingW`, POSIX `mmap`/`pread`;
   sparse files, zero-copy windows, zeroize, read-only mappings.
 - Windows `IocpFile`: overlapped I/O + IOCP, QD 1–128 batch reads/writes.
-- Windows direct I/O: `openMmapFileSync(..., direct: true)` /
-  `ParallelBytesFile.open(..., direct: true)` via `FILE_FLAG_NO_BUFFERING`,
-  `VirtualAlloc`-aligned scratch buffers, and 4 KiB-aligned streaming
+- Direct I/O: `openMmapFileSync(..., direct: true)` /
+  `ParallelBytesFile.open(..., direct: true)` via Windows
+  `FILE_FLAG_NO_BUFFERING` + `VirtualAlloc`, Linux/Android `O_DIRECT`, and
+  macOS/iOS `F_NOCACHE`; aligned scratch buffers and 4 KiB-aligned streaming
   reads/writes.
 - `ParallelBytesFile`: isolate worker pool (default up to 32), automatic FIFO
   dispatch, batch 32, `readMany`/`writeMany`, watermark barriers,
