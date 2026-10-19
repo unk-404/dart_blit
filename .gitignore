@@ -1,0 +1,12 @@
+# Agent-only workspace: notes, probes, scratch. Never published.
+.agents/
+
+# Local build/cache outputs.
+.dart_tmp/
+.dart_tool/
+**/.dart_tool/
+build/
+**/build/
+
+# pubspec.lock is intentionally ignored for this library package.
+pubspec.lock

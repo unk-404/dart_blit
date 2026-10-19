@@ -1,0 +1,85 @@
+name: Benchmark (Windows)
+
+# Manual only: a 32 GiB run materialises a large file and takes minutes.
+# Benchmarks use package:benchmark_harness and print stable
+# `name(Metric): value unit` lines.
+
+on:
+  workflow_dispatch:
+    inputs:
+      size_gb:
+        description: Logical file size in GiB for the random benchmark.
+        required: true
+        default: "32"
+        type: string
+      include_parallel:
+        description: Also run the isolate-pool 1 GiB benchmark.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bench-windows:
+    name: Windows / ${{ inputs.size_gb }} GiB
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+
+      - name: Show Dart version
+        run: dart --version
+
+      - name: Dart pub get
+        run: dart pub get
+
+      - name: Show disk space
+        shell: pwsh
+        run: |
+          Get-PSDrive -PSProvider FileSystem |
+            Select-Object Name, @{n = 'FreeGiB'; e = { [math]::Round($_.Free / 1GB, 1) } }
+
+      - name: Random 4K benchmark (benchmark_harness)
+        shell: pwsh
+        run: |
+          $env:BYTES_BENCH_GB = '${{ inputs.size_gb }}'
+          $output = & dart run benchmark/random_32g_benchmark.dart 2>&1
+          $code = $LASTEXITCODE
+          $output | Tee-Object -FilePath bench-random.md
+          if ($code -ne 0) { exit $code }
+
+      - name: Sequential / mmap 1 GiB benchmark
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark/io_benchmark.dart 2>&1
+          $code = $LASTEXITCODE
+          $output | Tee-Object -FilePath bench-io.md
+          if ($code -ne 0) { exit $code }
+
+      - name: Isolate pool benchmark
+        if: ${{ inputs.include_parallel }}
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark/parallel_benchmark.dart 2>&1
+          $code = $LASTEXITCODE
+          $output | Tee-Object -FilePath bench-parallel.md
+          if ($code -ne 0) { exit $code }
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blit-bench-${{ inputs.size_gb }}g
+          path: bench-*
+          if-no-files-found: ignore

@@ -1,0 +1,242 @@
+name: CI
+
+# Runs on every push / PR.  The 32 GiB benchmark is a separate, manual workflow
+# (`.github/workflows/bench.yml`) because it needs a huge scratch file.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep pub's telemetry/analytics out of CI logs.
+  PUB_ENVIRONMENT: blit_ci
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Core package: analyze + VM tests on all three desktop OSes.
+  # ---------------------------------------------------------------------------
+  dart:
+    name: Dart / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          # Pinned to the SDK the project is developed against.  Bump together
+          # with pubspec.yaml's environment constraint.
+          sdk: 3.13.5
+
+      - name: Show Dart version
+        run: dart --version
+
+      - name: dart pub get
+        run: dart pub get
+
+      - name: dart analyze
+        run: dart analyze
+
+      # Discover VM tests instead of hard-coding paths so that new test
+      # directories (test/native, test/windows, ...) are picked up
+      # automatically.  Browser tests (test/web) run in the `web` job, and
+      # POSIX-only tests are skipped on Windows.
+      - name: dart test (VM)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            files=$(find test -name '*_test.dart' \
+              ! -path 'test/web/*' \
+              ! -path '*posix*' | sort)
+          else
+            files=$(find test -name '*_test.dart' \
+              ! -path 'test/web/*' | sort)
+          fi
+          if [ -z "${files}" ]; then
+            echo "::error title=No tests found::No *_test.dart files discovered under test/"
+            exit 1
+          fi
+          echo "VM test files:"
+          echo "${files}"
+          # shellcheck disable=SC2086  # paths never contain spaces in CI
+          dart test ${files}
+
+      - name: Run native example
+        run: dart run example/bytes_example.dart
+
+  # ---------------------------------------------------------------------------
+  # Web: core types + (when it lands) the OPFS engine, in a real browser.
+  # ---------------------------------------------------------------------------
+  web:
+    name: Web / Chrome
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+
+      - name: Show Dart version
+        run: dart --version
+
+      - name: dart pub get
+        run: dart pub get
+
+      - name: Check Chrome
+        run: google-chrome --version
+
+      # The OPFS backend is landing in parallel; run the browser suite only
+      # when test/web actually contains tests.  Never fail just because the
+      # directory does not exist yet.
+      - name: dart test -p chrome (test/web + core fuzz)
+        if: ${{ hashFiles('test/web/**/*_test.dart') != '' }}
+        run: dart test -p chrome test/web test/bytes_fuzz_test.dart
+
+      - name: Web tests pending
+        if: ${{ hashFiles('test/web/**/*_test.dart') == '' }}
+        run: |
+          echo "::notice title=Web runtime tests skipped::test/web has no *_test.dart yet (OPFS backend in progress)."
+
+      # Must compile: proves the default import (package:blit/bytes.dart) is
+      # web-safe (no dart:io / dart:ffi leak).
+      - name: Compile web example with dart2js
+        run: |
+          mkdir -p build/web
+          dart compile js example/bytes_web_example.dart \
+            -o build/web/bytes_web_example.js
+          test -s build/web/bytes_web_example.js
+
+  # ---------------------------------------------------------------------------
+  # Flutter: analyze + widget test on all desktop OSes, plus one native build
+  # per OS (web on Linux, Windows on Windows, macOS on macOS).
+  # ---------------------------------------------------------------------------
+  flutter:
+    name: Flutter / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            build: web
+          - os: windows-latest
+            build: windows
+          - os: macos-latest
+            build: macos
+    defaults:
+      run:
+        working-directory: flutter_example
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.47.7"
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test
+
+      - name: flutter build web
+        if: ${{ matrix.build == 'web' }}
+        run: flutter build web --release --no-pub
+
+      - name: flutter build windows
+        if: ${{ matrix.build == 'windows' }}
+        run: flutter build windows --debug --no-pub
+
+      - name: flutter build macos
+        if: ${{ matrix.build == 'macos' }}
+        run: flutter build macos --debug --no-pub
+
+  # ---------------------------------------------------------------------------
+  # Android: debug APK (no emulator, no signing).
+  # ---------------------------------------------------------------------------
+  android:
+    name: Flutter / Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: flutter_example
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.47.7"
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter build apk --debug
+        run: flutter build apk --debug --no-pub
+
+  # ---------------------------------------------------------------------------
+  # iOS: build only, unsigned (no provisioning profile / certificate needed).
+  # ---------------------------------------------------------------------------
+  ios:
+    name: Flutter / iOS (no codesign)
+    runs-on: macos-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: flutter_example
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.47.7"
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter build ios --no-codesign
+        run: flutter build ios --no-codesign --no-pub

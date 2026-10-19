@@ -1,0 +1,28 @@
+name: bytes_example
+description: Minimal Flutter demo for the bytes package (Bytes, BytesMut, Uint64).
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Icon font used by Material's iOS-style fallbacks (asset package, not a
+  # plugin).
+  cupertino_icons: ^1.0.8
+
+  # The local `blit` package.  No plugins / native packages are required:
+  # the core library is pure Dart and web-safe.
+  blit:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,12 @@
+# Files excluded from the pub.dev package.
+.agents/
+.dart_tmp/
+.github/
+.vscode/
+benchmark/
+docs/
+tool/
+test/
+flutter_example/
+analysis_options.yaml
+pubspec.lock

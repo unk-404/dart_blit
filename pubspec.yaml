@@ -1,0 +1,22 @@
+name: blit
+description: Zero-copy Bytes/BytesMut and high-performance random-access file I/O for Dart and Flutter, with native FFI mmap and Web OPFS.
+version: 0.1.0
+
+repository: https://github.com/inenure/blit
+topics:
+  - bytes
+  - io
+  - mmap
+  - opfs
+  - ffi
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  ffi: ^2.2.0
+
+dev_dependencies:
+  benchmark_harness: ^2.4.0
+  lints: ^6.0.0
+  test: ^1.31.1
