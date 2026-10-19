@@ -4,7 +4,7 @@ Zero-copy `Bytes` / `BytesMut` and high-performance random-access file I/O for
 Dart and Flutter. Native I/O is pure `dart:ffi` (no C, no native build hooks);
 Web I/O uses OPFS chunk files and a dedicated worker.
 
-![blit benchmark table](https://raw.githubusercontent.com/inenure/blit/main/assets/benchmarks.svg)
+![blit benchmark table](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks.svg)
 
 ## Features
 
@@ -113,6 +113,13 @@ final chunks = await pool.readMany([0, 1 << 20, 2 << 20], 4096);
 await pool.close();
 ```
 
+`readMany` merges exactly adjacent ranges (one syscall per sequential run).
+For `readOnly: true` files up to `mmapReadCacheLimit` (default 1 GiB), each
+worker maps the whole file once and serves reads from memory; hot random reads
+skip the per-block `ReadFile`/`pread`. Set the limit to `0` to disable, or raise
+it for a hot file that fits comfortably in the address space. Mapping is
+virtual: cold pages still fault from disk.
+
 `IocpFile` (Windows) is available for a single worker that wants deeper queue:
 
 ```dart
@@ -150,10 +157,10 @@ Local Windows x64, UMIS NVMe SSD, 32 logical CPUs, 16.6 GB RAM, Dart 3.13.5:
 | 32 GiB 4K random pwrite | 95.6k IOPS / 373 MiB/s (buffered) |
 | 32 GiB 4K random mmap read (cold) | 5.0k IOPS / 19.5 MiB/s |
 | `IocpFile` 4K read, single worker QD32 (1 GiB warm) | 93k–112k IOPS (JIT), ~138k (AOT) |
-| Isolate pool 4K read, 16 workers (1 GiB warm) | 194.4k IOPS / 759 MiB/s |
+| Isolate pool 4K read, 16 workers (1 GiB warm, mmap cache) | **823k IOPS / 3.1 GiB/s** |
 | Isolate pool 4K read, 16 workers (32 GiB cold) | 106.7k IOPS / 417 MiB/s |
-| `readMany` 4K sequential, 4 workers (256 MiB hot) | 2.1 GiB/s (adjacent ranges coalesced) |
-| `readMany` 4K random, 4 workers (256 MiB hot) | 1.1 GiB/s |
+| Isolate pool 4K read, 4 workers (1 GiB warm, mmap cache) | 608k IOPS / 2.3 GiB/s |
+| Isolate pool 4K sequential readMany, 4 workers (1 GiB warm) | 467k IOPS / 1.8 GiB/s |
 
 4K cold random is QD1 disk-latency-bound; the pool hides it with worker
 concurrency. `pwrite` numbers are page-cache writes, not durability. mmap cold
@@ -163,7 +170,7 @@ random pays page faults; hot/repeated access is memory-speed.
 
 - [`example/bytes_example.dart`](example/bytes_example.dart): zero-copy, encoding and native file I/O.
 - [`example/bytes_web_example.dart`](example/bytes_web_example.dart): Web-safe core for dart2js/dart2wasm.
-- [`flutter_example/`](https://github.com/inenure/blit/tree/main/flutter_example): Flutter app and widget test using `blit` (repository-only, not in the pub package).
+- [`flutter_example/`](https://github.com/unk-404/dart_blit/tree/master/flutter_example): Flutter app and widget test using `blit` (repository-only, not in the pub package).
 
 ## Tests and CI
 
@@ -180,9 +187,11 @@ tests cover the OPFS backend and Web fuzz. CI runs Dart on
 Ubuntu/macOS/Windows, Chrome on Ubuntu, Flutter desktop/Web builds, and on
 push/manual runs a Windows benchmark job after all tests pass. That job renders
 `assets/benchmarks.svg`, uploads the JSONL + SVG artifact, and commits the SVG
-with `[skip ci]`; PR runs stop after the tests. The manual
-`bench.yml` workflow remains for 32 GiB runs. The local development machine is
-Windows.
+with `[skip ci]`; PR runs stop after the tests. Manual `workflow_dispatch`
+accepts `benchmark_gb` (default 4; hosted Windows runners should stay small).
+For a local 32 GiB run, use
+`BYTES_BENCH_GB=32 dart run benchmark_test benchmark/random_32g_benchmarks_test.dart`.
+The local development machine is Windows.
 
 ## Limitations
 

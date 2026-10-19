@@ -16,8 +16,8 @@ First development release.
   sparse files, zero-copy windows, zeroize, read-only mappings.
 - Windows `IocpFile`: overlapped I/O + IOCP, QD 1–128 batch reads/writes.
 - `ParallelBytesFile`: isolate worker pool, automatic FIFO dispatch, batch 32,
-  `readMany`/`writeMany`, watermark barriers, and adjacent-range coalescing
-  (one syscall per sequential run instead of one per 4K block).
+  `readMany`/`writeMany`, watermark barriers, adjacent-range coalescing, and a
+  read-only full-file mmap cache for hot files (default limit 1 GiB).
 - Web OPFS backend: chunk files, double-slot manifest, CRC-32, dedicated
   worker, capability/quota probing.
 - Benchmark suite (`benchmark_test`, JIT/AOT + JSONL), a generated

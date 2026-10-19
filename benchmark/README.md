@@ -47,18 +47,21 @@ These are one local run, not guarantees:
 
 | Body | reported ops/sec | converted |
 |---|---:|---:|
-| `file.read.8MiB` | ~656 | ~5.2 GiB/s |
-| `file.write.8MiB` | ~485 | ~3.9 GiB/s |
-| `file.read.random4K` | ~151k | 151k IOPS |
-| `file.write.random4K` | ~157k | 157k IOPS |
-| `pool.read.random4K.w1` | ~3.1k batches | ~99k IOPS |
-| `pool.read.random4K.w16` | ~467 batches | ~239k IOPS |
-| `pool.read.sequential4K.w4` | ~11.5k batches | ~366k IOPS |
+| `file.read.8MiB` | ~850 | ~6.6 GiB/s |
+| `file.write.8MiB` | ~574 | ~4.5 GiB/s |
+| `file.read.random4K` | ~174k | 174k IOPS |
+| `file.write.random4K` | ~155k | 155k IOPS |
+| `pool.read.random4K.w1` | ~8.3k batches | ~264k IOPS |
+| `pool.read.random4K.w16` | ~1.6k batches | ~823k IOPS |
+| `pool.read.sequential4K.w4` | ~14.6k batches | ~467k IOPS |
 | `iocp.read.random4K.qd8` | ~12.4k batches | ~99k IOPS |
 | `iocp.read.random4K.qd32` | ~3.3k batches | ~107k IOPS |
 
-The pool's `sequential4K` body benefits from adjacent-range coalescing; the
-`random4K` body does not merge and therefore measures the dispatch path.
+The pool's `sequential4K` body benefits from adjacent-range coalescing. The
+1 GiB pool benchmarks also use the read-only full-file mmap cache (default
+limit 1 GiB); before that cache, 16 workers measured ~237k IOPS instead of
+~823k. The random 4 GiB body does not use the cache (file is larger than the
+limit) and measures the dispatch path.
 
 ## Caveats
 
@@ -78,9 +81,11 @@ The pool's `sequential4K` body benefits from adjacent-range coalescing; the
 
 ## CI
 
-`.github/workflows/bench.yml` is manual (Windows) for 32 GiB runs. On
-push/manual runs, `.github/workflows/ci.yml` runs the core/1 GiB/pool suite,
+On push/manual runs, `.github/workflows/ci.yml` runs the core/1 GiB/pool suite,
 the random 4 GiB suite, and the IOCP sweep after all tests pass, then renders
 `assets/benchmarks.svg` and uploads JSONL + SVG. It commits the SVG on
-push/manual only (PR runs stop after tests). `dart test` does not execute
-`benchmark/`.
+push/manual only (PR runs stop after tests). Manual `workflow_dispatch` accepts
+`benchmark_gb` (default 4). There is no separate benchmark workflow; for a local
+32 GiB run use
+`BYTES_BENCH_GB=32 dart run benchmark_test benchmark/random_32g_benchmarks_test.dart`.
+`dart test` does not execute `benchmark/`.

@@ -34,6 +34,7 @@ final class ParallelBytesFile implements BytesFile {
   final bool readOnly;
   final int maxWorkers;
   final bool useIocp;
+  final int mmapReadCacheLimit;
   final MmapFile _coordinator;
   final ReceivePort _replies = ReceivePort();
   final List<_Worker> _workers = <_Worker>[];
@@ -52,6 +53,7 @@ final class ParallelBytesFile implements BytesFile {
     this.readOnly,
     this.maxWorkers,
     this.useIocp,
+    this.mmapReadCacheLimit,
     this._coordinator,
   ) {
     _replies.listen(_onReply);
@@ -62,22 +64,33 @@ final class ParallelBytesFile implements BytesFile {
   /// Default concurrency is `min(16, max(2, cpus - 1))`; one worker per queued
   /// request is not useful because each request already has a synchronous FFI
   /// call, but 8–16 workers saturate a consumer NVMe at QD8–QD16.
+  ///
+  /// With [readOnly] and a file no larger than [mmapReadCacheLimit], each
+  /// worker maps the whole file read-only once and serves reads from the map
+  /// (hot random reads avoid a `ReadFile`/`pread` syscall per block).  Set the
+  /// limit to `0` to disable, or raise it for hot files that fit in the address
+  /// space; mapping is virtual and does not eagerly read the file.
   static Future<ParallelBytesFile> open(
     String path, {
     bool create = true,
     bool readOnly = false,
     int? maxWorkers,
     bool useIocp = false,
+    int mmapReadCacheLimit = 1 << 30,
   }) async {
     final workers = maxWorkers ??
         math.min(16, math.max(2, Platform.numberOfProcessors - 1));
     if (workers < 1) throw RangeError.value(workers, 'maxWorkers');
+    if (mmapReadCacheLimit < 0) {
+      throw RangeError.value(mmapReadCacheLimit, 'mmapReadCacheLimit');
+    }
     final coordinator = openMmapFileSync(path, create: create, readOnly: readOnly);
     final pool = ParallelBytesFile._(
       path,
       readOnly,
       workers,
       useIocp,
+      mmapReadCacheLimit,
       coordinator,
     );
     try {
@@ -96,7 +109,8 @@ final class ParallelBytesFile implements BytesFile {
       final done = Completer<void>();
       final isolate = await Isolate.spawn(
         _workerMain,
-        [readyPort.sendPort, _replies.sendPort, path, readOnly, useIocp],
+        [readyPort.sendPort, _replies.sendPort, path, readOnly, useIocp,
+         mmapReadCacheLimit],
         debugName: 'bytes-worker-$i',
         onExit: readyPort.sendPort,
         onError: readyPort.sendPort,
@@ -526,9 +540,12 @@ void _workerMain(List<Object> args) {
   final path = args[2] as String;
   final readOnly = args[3] as bool;
   final useIocp = args[4] as bool;
+  final mmapReadCacheLimit = args[5] as int;
   final commands = ReceivePort();
   IocpFile? iocp;
   MmapFile? mmap;
+  MappedRegion? readCache;
+  Uint8List? readView;
   try {
     if (Platform.isWindows && useIocp) {
       iocp = IocpFile.openSync(
@@ -539,6 +556,23 @@ void _workerMain(List<Object> args) {
       );
     } else {
       mmap = openMmapFileSync(path, create: false, readOnly: readOnly);
+      if (readOnly &&
+          mmapReadCacheLimit > 0 &&
+          mmap.length > 0 &&
+          mmap.length <= mmapReadCacheLimit) {
+        try {
+          readCache = mmap.map(
+            offset: 0,
+            length: mmap.length,
+            writable: false,
+          );
+          readView = readCache.bytes;
+        } catch (_) {
+          // Mapping is an optimization; fall back to ReadFile/pread.
+          readCache = null;
+          readView = null;
+        }
+      }
     }
   } catch (e) {
     ready.send(['error', e.toString()]);
@@ -546,15 +580,23 @@ void _workerMain(List<Object> args) {
     return;
   }
 
-  int readInto(int offset, Uint8List dst, int start, int end) =>
-      iocp?.readAtSync(offset, dst, start: start, end: end) ??
-      mmap!.readAt(offset, dst, start: start, end: end);
+  int readInto(int offset, Uint8List dst, int start, int end) {
+    final view = readView;
+    final length = end - start;
+    if (view != null && offset >= 0 && offset + length <= view.length) {
+      dst.setRange(start, end, view, offset);
+      return length;
+    }
+    return iocp?.readAtSync(offset, dst, start: start, end: end) ??
+        mmap!.readAt(offset, dst, start: start, end: end);
+  }
 
   int writeFrom(int offset, Uint8List src, int start, int end) =>
       iocp?.writeAtSync(offset, src, start: start, end: end) ??
       mmap!.writeAt(offset, src, start: start, end: end);
 
   void closeFile() {
+    readCache?.close();
     iocp?.close();
     mmap?.close();
   }
