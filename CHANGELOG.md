@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - 2026-10-19
+## 0.1.0
 
 First development release.
 
@@ -15,6 +15,12 @@ First development release.
 - Native mmap engine: Windows `CreateFileMappingW`, POSIX `mmap`/`pread`;
   sparse files, zero-copy windows, zeroize, read-only mappings.
 - Windows `IocpFile`: overlapped I/O + IOCP, QD 1–128 batch reads/writes.
+- `MappedRegion.prefetch()` / `discard()`: Windows `PrefetchVirtualMemory`
+  (discard is a no-op for file-backed maps), POSIX `madvise(MADV_WILLNEED /
+  MADV_DONTNEED)`.
+- `Bytes.getUint8/16/32Unchecked` and
+  `BytesReader.readUint8/16/32/64Unchecked` hot-path methods (caller checks
+  bounds once).
 - Direct I/O: `openMmapFileSync(..., direct: true)` /
   `ParallelBytesFile.open(..., direct: true)` via Windows
   `FILE_FLAG_NO_BUFFERING` + `VirtualAlloc`, Linux/Android `O_DIRECT`, and

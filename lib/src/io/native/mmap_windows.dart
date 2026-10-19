@@ -75,6 +75,18 @@ typedef _VirtualAlloc = Pointer<Uint8> Function(
 typedef _VirtualFree_C = Int32 Function(Pointer<Void>, Size, Uint32);
 typedef _VirtualFree = int Function(Pointer<Void>, int, int);
 
+final class _MemoryRangeEntry extends Struct {
+  external Pointer<Void> virtualAddress;
+
+  @Size()
+  external int numberOfBytes;
+}
+
+typedef _PrefetchVirtualMemory_C = Int32 Function(
+    IntPtr, Size, Pointer<_MemoryRangeEntry>, Uint32);
+typedef _PrefetchVirtualMemory = int Function(
+    int, int, Pointer<_MemoryRangeEntry>, int);
+
 const int _genericRead = 0x80000000;
 const int _genericWrite = 0x40000000;
 const int _fileShareAll = 0x00000007;
@@ -154,6 +166,9 @@ class _Win32 {
       _k32.lookupFunction<_VirtualAlloc_C, _VirtualAlloc>('VirtualAlloc');
   late final _VirtualFree virtualFree =
       _k32.lookupFunction<_VirtualFree_C, _VirtualFree>('VirtualFree');
+  late final _PrefetchVirtualMemory prefetchVirtualMemory =
+      _k32.lookupFunction<_PrefetchVirtualMemory_C, _PrefetchVirtualMemory>(
+          'PrefetchVirtualMemory');
 
   _Win32() {
     // Warm up every lazy lookupFunction once, before any operation whose
@@ -176,6 +191,7 @@ class _Win32 {
     memset;
     virtualAlloc;
     virtualFree;
+    prefetchVirtualMemory;
   }
 
   Never fail(String op, String path) =>
@@ -597,6 +613,45 @@ final class WindowsMappedRegion implements MappedRegion {
       throw StateError('Cannot zeroize a read-only mapping');
     }
     _win.memset((_base + _delta).cast(), 0, length);
+  }
+
+  ({int offset, int length}) _hintRange(int offset, int? length) {
+    if (_closed) throw StateError('Mapped region is closed');
+    if (offset < 0 || offset > this.length) {
+      throw RangeError.range(offset, 0, this.length, 'offset');
+    }
+    final n = length ?? (this.length - offset);
+    if (n < 0 || offset + n > this.length) {
+      throw RangeError.range(n, 0, this.length - offset, 'length');
+    }
+    return (offset: offset, length: n);
+  }
+
+  @override
+  void prefetch({int offset = 0, int? length}) {
+    final range = _hintRange(offset, length);
+    if (range.length == 0) return;
+    final entry = calloc<_MemoryRangeEntry>();
+    try {
+      entry.ref.virtualAddress =
+          (_base + _delta + range.offset).cast<Void>();
+      entry.ref.numberOfBytes = range.length;
+      final ok = _win.prefetchVirtualMemory(-1, 1, entry, 0);
+      if (ok == 0) {
+        throw WindowsException(
+            'PrefetchVirtualMemory', _win.getLastError(), _owner.path);
+      }
+    } finally {
+      calloc.free(entry);
+    }
+  }
+
+  @override
+  void discard({int offset = 0, int? length}) {
+    // Windows returns ERROR_USER_MAPPED_FILE for file-backed mapped ranges,
+    // so DiscardVirtualMemory cannot be used here.  Keep the call advisory and
+    // validate the range, then let the OS evict pages normally.
+    _hintRange(offset, length);
   }
 
   @override

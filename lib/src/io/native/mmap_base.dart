@@ -35,6 +35,19 @@ abstract interface class MappedRegion {
   /// Overwrites this window with zeros using a native memset.
   void zeroize();
 
+  /// Hints the OS to page in `[offset, offset + length)` ahead of use.
+  ///
+  /// Windows: `PrefetchVirtualMemory`; POSIX: `madvise(MADV_WILLNEED)`.
+  /// Useful for scan/streaming windows; a no-op for an empty range.
+  void prefetch({int offset = 0, int? length});
+
+  /// Hints the OS to drop `[offset, offset + length)` from the working set.
+  ///
+  /// POSIX: `madvise(MADV_DONTNEED)`.  Windows currently validates the range
+  /// but is a no-op for file-backed mappings, because `DiscardVirtualMemory`
+  /// returns `ERROR_USER_MAPPED_FILE` for them.
+  void discard({int offset = 0, int? length});
+
   /// Unmaps this window; idempotent.
   void close();
 }

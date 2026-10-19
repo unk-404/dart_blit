@@ -784,6 +784,34 @@ final class PosixMappedRegion implements MappedRegion {
     _libc.zeroMemory((_base + _delta).cast(), length);
   }
 
+  ({int offset, int length}) _hintRange(int offset, int? length) {
+    if (_closed) throw StateError('Mapped region is closed');
+    if (offset < 0 || offset > this.length) {
+      throw RangeError.range(offset, 0, this.length, 'offset');
+    }
+    final n = length ?? (this.length - offset);
+    if (n < 0 || offset + n > this.length) {
+      throw RangeError.range(n, 0, this.length - offset, 'length');
+    }
+    return (offset: offset, length: n);
+  }
+
+  @override
+  void prefetch({int offset = 0, int? length}) {
+    final range = _hintRange(offset, length);
+    if (range.length == 0) return;
+    _libc.madvise((_base + _delta + range.offset).cast(), range.length,
+        _madvWillNeed);
+  }
+
+  @override
+  void discard({int offset = 0, int? length}) {
+    final range = _hintRange(offset, length);
+    if (range.length == 0) return;
+    _libc.madvise((_base + _delta + range.offset).cast(), range.length,
+        _madvDontNeed);
+  }
+
   /// Hints that this window will be read sequentially (`MADV_SEQUENTIAL`).
   void adviseSequential() => _advise(_madvSequential);
 

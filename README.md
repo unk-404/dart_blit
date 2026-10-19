@@ -113,6 +113,13 @@ final chunks = await pool.readMany([0, 1 << 20, 2 << 20], 4096);
 await pool.close();
 ```
 
+Mapped windows expose `prefetch()` / `discard()` hints:
+
+```dart
+region.prefetch(offset: 0, length: 1 << 20); // WILLNEED / PrefetchVirtualMemory
+region.discard(offset: 0, length: 1 << 20);  // DONTNEED (Windows no-op for file maps)
+```
+
 `readMany` merges exactly adjacent ranges (one syscall per sequential run).
 For `readOnly: true` files up to `mmapReadCacheLimit` (default 1 GiB), each
 worker maps the whole file once and serves reads from memory; hot random reads
@@ -172,6 +179,10 @@ Local Windows x64, UMIS NVMe SSD, 32 logical CPUs, 16.6 GB RAM, Dart 3.13.5:
 | Sequential write 1 GiB (8 MiB blocks, cached) | 4.55 GiB/s |
 | Direct streaming write 1 GiB (`NO_BUFFERING`) | 1.9 GiB/s |
 | Direct streaming read 1 GiB (`NO_BUFFERING`) | 2.7 GiB/s |
+| 32 GiB streaming read, buffered | 2.2 GiB/s |
+| 32 GiB streaming read, direct | **3.1 GiB/s** |
+| 32 GiB streaming write, buffered | 0.87 GiB/s |
+| 32 GiB streaming write, direct | **1.15 GiB/s** |
 | 32 GiB 4K random pread | 7.35k IOPS / 28.7 MiB/s |
 | 32 GiB 4K random pwrite | 95.6k IOPS / 373 MiB/s (buffered) |
 | 32 GiB 4K random mmap read (cold) | 5.0k IOPS / 19.5 MiB/s |

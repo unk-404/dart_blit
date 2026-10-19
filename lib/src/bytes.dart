@@ -101,6 +101,11 @@ final class Bytes implements Comparable<Bytes> {
 
   int getUint8(int index) => this[index];
 
+  /// Reads one byte without a bounds check.
+  ///
+  /// Hot-path escape hatch: the caller must guarantee `index < length`.
+  int getUint8Unchecked(int index) => _buffer[_offset + index];
+
   int getUint16(int index, {Endian endian = Endian.big}) {
     _check(index, 2);
     final i = _offset + index;
@@ -109,8 +114,29 @@ final class Bytes implements Comparable<Bytes> {
     return endian == Endian.big ? (a << 8) | b : (b << 8) | a;
   }
 
+  /// Reads two bytes without a bounds check.
+  int getUint16Unchecked(int index, {Endian endian = Endian.big}) {
+    final i = _offset + index;
+    final a = _buffer[i];
+    final b = _buffer[i + 1];
+    return endian == Endian.big ? (a << 8) | b : (b << 8) | a;
+  }
+
   int getUint32(int index, {Endian endian = Endian.big}) {
     _check(index, 4);
+    final i = _offset + index;
+    final a = _buffer[i];
+    final b = _buffer[i + 1];
+    final c = _buffer[i + 2];
+    final d = _buffer[i + 3];
+    if (endian == Endian.big) {
+      return (a << 24) | (b << 16) | (c << 8) | d;
+    }
+    return (d << 24) | (c << 16) | (b << 8) | a;
+  }
+
+  /// Reads four bytes without a bounds check.
+  int getUint32Unchecked(int index, {Endian endian = Endian.big}) {
     final i = _offset + index;
     final a = _buffer[i];
     final b = _buffer[i + 1];

@@ -159,5 +159,34 @@ void main() {
       r.skip(2);
       expect(r.hasRemaining, isFalse);
     });
+
+    test('unchecked reads match checked reads', () {
+      final data = Uint8List.fromList(List<int>.generate(64, (i) => i * 7));
+      final bytes = Bytes.fromUint8List(data);
+      expect(bytes.getUint8Unchecked(3), bytes.getUint8(3));
+      expect(bytes.getUint16Unchecked(3, endian: Endian.big),
+          bytes.getUint16(3, endian: Endian.big));
+      expect(bytes.getUint16Unchecked(3, endian: Endian.little),
+          bytes.getUint16(3, endian: Endian.little));
+      expect(bytes.getUint32Unchecked(5, endian: Endian.big),
+          bytes.getUint32(5, endian: Endian.big));
+      expect(bytes.getUint32Unchecked(5, endian: Endian.little),
+          bytes.getUint32(5, endian: Endian.little));
+
+      final reader = BytesReader(bytes);
+      expect(reader.readUint8Unchecked(), bytes.getUint8(0));
+      expect(reader.readUint16Unchecked(endian: Endian.little),
+          bytes.getUint16(1, endian: Endian.little));
+      expect(reader.readUint32Unchecked(endian: Endian.big),
+          bytes.getUint32(3, endian: Endian.big));
+      expect(reader.readUint64Unchecked(endian: Endian.big),
+          bytes.getUint64(7, endian: Endian.big));
+      expect(reader.position, 15);
+
+      final le = BytesReader(bytes, 7);
+      expect(le.readUint64Unchecked(endian: Endian.little),
+          bytes.getUint64(7, endian: Endian.little));
+      expect(le.position, 15);
+    });
   });
 }

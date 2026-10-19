@@ -39,8 +39,21 @@ final class BytesReader {
     return v;
   }
 
+  /// Reads one byte without a bounds check.
+  ///
+  /// The caller must guarantee [remaining] >= 1; this is for hot loops that
+  /// already validate the frame length.
+  int readUint8Unchecked() => _bytes.getUint8Unchecked(_position++);
+
   int readUint16({Endian endian = Endian.big}) {
     final v = _bytes.getUint16(_position, endian: endian);
+    _position += 2;
+    return v;
+  }
+
+  /// Reads two bytes without a bounds check (caller guarantees remaining).
+  int readUint16Unchecked({Endian endian = Endian.big}) {
+    final v = _bytes.getUint16Unchecked(_position, endian: endian);
     _position += 2;
     return v;
   }
@@ -51,10 +64,27 @@ final class BytesReader {
     return v;
   }
 
+  /// Reads four bytes without a bounds check (caller guarantees remaining).
+  int readUint32Unchecked({Endian endian = Endian.big}) {
+    final v = _bytes.getUint32Unchecked(_position, endian: endian);
+    _position += 4;
+    return v;
+  }
+
   Uint64 readUint64({Endian endian = Endian.big}) {
     final v = _bytes.getUint64(_position, endian: endian);
     _position += 8;
     return v;
+  }
+
+  /// Reads eight bytes without a bounds check (caller guarantees remaining).
+  Uint64 readUint64Unchecked({Endian endian = Endian.big}) {
+    final first = _bytes.getUint32Unchecked(_position, endian: endian);
+    final second = _bytes.getUint32Unchecked(_position + 4, endian: endian);
+    _position += 8;
+    return endian == Endian.big
+        ? Uint64(first, second)
+        : Uint64(second, first);
   }
 
   /// Returns a zero-copy view of the next [length] bytes and advances.
