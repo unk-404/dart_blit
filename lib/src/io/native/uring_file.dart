@@ -44,6 +44,16 @@ final class UringBytesFile implements BytesFile {
   static const int _fixedBufferSize = 8 << 20;
   static const int _fixedBufferCount = 4;
 
+  /// Closes idle loops owned by the process-wide shared [UringLoopPool].
+  ///
+  /// Call this when the application is done with `sharedLoop: true`. Active
+  /// leases are closed as they are released; the returned future completes
+  /// when the pool is empty. Private (non-shared) loops do not use this pool.
+  static Future<void> closeSharedLoopPool({
+    int entries = 256,
+    bool spin = false,
+  }) => UringLoopPool.shared(entries: entries, spin: spin).close();
+
   UringBuffer _acquireBuffer(int length) {
     for (final buffer in _fixedBuffers) {
       if (!_fixedBusy.contains(buffer) && buffer.length >= length) {

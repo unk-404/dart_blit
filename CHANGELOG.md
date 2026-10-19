@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4
+
+### Fixed
+
+- Shared `io_uring` loops are now explicitly closable through
+  `UringBytesFile.closeSharedLoopPool`; the Linux test suite closes its pool in
+  `tearDownAll`. This prevents an idle `io_uring-reaper` isolate from keeping
+  `dart test` / CI alive after the shared-loop tests finish.
+
 ## 0.1.3
 
 ### Changed

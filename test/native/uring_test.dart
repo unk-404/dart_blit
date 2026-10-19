@@ -32,6 +32,12 @@ void main() {
     if (dir.existsSync()) dir.deleteSync(recursive: true);
   });
 
+  tearDownAll(() async {
+    // Shared-loop leases reuse idle reaper isolates. Close the process-wide
+    // pool so `dart test` does not wait for an idle reaper forever.
+    await UringBytesFile.closeSharedLoopPool(entries: 16);
+  });
+
   test('write/read/append/truncate/flush', () async {
     final file = await openUringBytesFile(path, entries: 16);
     try {
