@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.2
+
+### Performance
+
+- Buffered `MmapFile.readAt` / `writeAt` now use a transparent whole-file mmap
+  cache by default; `mmapCache: false` keeps pool workers and direct-I/O files
+  on the syscall path. File size and FFI argument storage are reused instead of
+  queried/allocated per call.
+- Added an isolate-local `PooledNativeAllocator` for uninitialized, reusable
+  scratch blocks.
+- `UringBytesFile` reuses `UringBuffer`s across single and batched operations.
+
 ## 0.1.1
 
 ### Added

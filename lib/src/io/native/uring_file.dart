@@ -31,6 +31,25 @@ final class UringBytesFile implements BytesFile {
   final UringLoop _loop;
   int _length;
   bool _closed = false;
+  final List<UringBuffer> _bufferPool = <UringBuffer>[];
+  final Set<UringBuffer> _busyBuffers = <UringBuffer>{};
+
+  UringBuffer _acquireBuffer(int length) {
+    for (final buffer in _bufferPool) {
+      if (!_busyBuffers.contains(buffer) && buffer.length >= length) {
+        _busyBuffers.add(buffer);
+        return buffer;
+      }
+    }
+    final buffer = UringBuffer.allocate(length);
+    _bufferPool.add(buffer);
+    _busyBuffers.add(buffer);
+    return buffer;
+  }
+
+  void _releaseBuffer(UringBuffer buffer) {
+    _busyBuffers.remove(buffer);
+  }
 
   /// Opens [path] on Linux using io_uring.
   ///
@@ -79,7 +98,7 @@ final class UringBytesFile implements BytesFile {
     if (offset < 0) throw RangeError.value(offset, 'offset');
     final count = e - start;
     if (count == 0) return 0;
-    final buffer = UringBuffer.allocate(count);
+    final buffer = _acquireBuffer(count);
     try {
       final cqe = await _loop.run(
         ReadOp(fd: _fd, buffer: buffer.pointer, length: count, offset: offset),
@@ -91,7 +110,7 @@ final class UringBytesFile implements BytesFile {
       dst.setRange(start, start + n, buffer.bytes);
       return n;
     } finally {
-      buffer.dispose();
+      _releaseBuffer(buffer);
     }
   }
 
@@ -108,7 +127,7 @@ final class UringBytesFile implements BytesFile {
     if (offset < 0) throw RangeError.value(offset, 'offset');
     final count = e - start;
     if (count == 0) return 0;
-    final buffer = UringBuffer.allocate(count);
+    final buffer = _acquireBuffer(count);
     try {
       buffer.bytes.setRange(0, count, src, start);
       final cqe = await _loop.run(
@@ -121,7 +140,7 @@ final class UringBytesFile implements BytesFile {
       if (offset + n > _length) _length = offset + n;
       return n;
     } finally {
-      buffer.dispose();
+      _releaseBuffer(buffer);
     }
   }
 
@@ -142,7 +161,7 @@ final class UringBytesFile implements BytesFile {
       final ops = <UringOp>[];
       for (final offset in offsets) {
         if (offset < 0) throw RangeError.value(offset, 'offset');
-        final buffer = UringBuffer.allocate(blockSize);
+        final buffer = _acquireBuffer(blockSize);
         buffers.add(buffer);
         ops.add(
           ReadOp(
@@ -168,7 +187,7 @@ final class UringBytesFile implements BytesFile {
       return result;
     } finally {
       for (final buffer in buffers) {
-        buffer.dispose();
+        _releaseBuffer(buffer);
       }
     }
   }
@@ -187,7 +206,7 @@ final class UringBytesFile implements BytesFile {
         final offset = offsets[i];
         if (offset < 0) throw RangeError.value(offset, 'offset');
         final data = blocks[i];
-        final buffer = UringBuffer.allocate(data.isEmpty ? 1 : data.length);
+        final buffer = _acquireBuffer(data.isEmpty ? 1 : data.length);
         buffers.add(buffer);
         if (data.isNotEmpty) {
           buffer.bytes.setRange(0, data.length, data);
@@ -218,7 +237,7 @@ final class UringBytesFile implements BytesFile {
       return result;
     } finally {
       for (final buffer in buffers) {
-        buffer.dispose();
+        _releaseBuffer(buffer);
       }
     }
   }
@@ -251,6 +270,11 @@ final class UringBytesFile implements BytesFile {
       await _loop.close();
     } finally {
       Posix.close(_fd);
+      for (final buffer in _bufferPool) {
+        buffer.dispose();
+      }
+      _bufferPool.clear();
+      _busyBuffers.clear();
     }
   }
 

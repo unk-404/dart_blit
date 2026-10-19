@@ -12,43 +12,65 @@ export 'mmap_base.dart';
 /// Linux/Android and `F_NOCACHE` on macOS/iOS.  It requires 4 KiB aligned
 /// offsets/lengths and is for streaming files larger than RAM; random 4 KiB
 /// access is much slower than the buffered/mmap path.
-Future<MmapFile> openMmapFile(String path,
-    {bool create = true,
-    bool readOnly = false,
-    bool direct = false,
-    bool largePages = false}) async {
+Future<MmapFile> openMmapFile(
+  String path, {
+  bool create = true,
+  bool readOnly = false,
+  bool direct = false,
+  bool largePages = false,
+  bool mmapCache = true,
+}) async {
   if (Platform.isWindows) {
-    return WindowsMmapFile.open(path,
-        create: create,
-        readOnly: readOnly,
-        direct: direct,
-        largePages: largePages);
+    return WindowsMmapFile.open(
+      path,
+      create: create,
+      readOnly: readOnly,
+      direct: direct,
+      largePages: largePages,
+      mmapCache: mmapCache,
+    );
   }
   if (largePages) {
     throw UnsupportedError('large pages are only implemented on Windows');
   }
   return PosixMmapFile.open(
-      path, create: create, readOnly: readOnly, direct: direct);
+    path,
+    create: create,
+    readOnly: readOnly,
+    direct: direct,
+    mmapCache: mmapCache,
+  );
 }
 
 /// Synchronous open.
-MmapFile openMmapFileSync(String path,
-    {bool create = true,
-    bool readOnly = false,
-    bool direct = false,
-    bool largePages = false}) {
+MmapFile openMmapFileSync(
+  String path, {
+  bool create = true,
+  bool readOnly = false,
+  bool direct = false,
+  bool largePages = false,
+  bool mmapCache = true,
+}) {
   if (Platform.isWindows) {
-    return WindowsMmapFile.openSync(path,
-        create: create,
-        readOnly: readOnly,
-        direct: direct,
-        largePages: largePages);
+    return WindowsMmapFile.openSync(
+      path,
+      create: create,
+      readOnly: readOnly,
+      direct: direct,
+      largePages: largePages,
+      mmapCache: mmapCache,
+    );
   }
   if (largePages) {
     throw UnsupportedError('large pages are only implemented on Windows');
   }
   return PosixMmapFile.openSync(
-      path, create: create, readOnly: readOnly, direct: direct);
+    path,
+    create: create,
+    readOnly: readOnly,
+    direct: direct,
+    mmapCache: mmapCache,
+  );
 }
 
 /// Clones [source] to [dest].

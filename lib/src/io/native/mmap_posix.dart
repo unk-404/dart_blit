@@ -29,6 +29,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import 'mmap_base.dart';
+import 'native_allocator.dart';
 
 // ---------------------------------------------------------------------------
 // C signatures.
@@ -39,8 +40,7 @@ import 'mmap_base.dart';
 //   the *64 entry points keep covering the full 32 GiB range.
 // ---------------------------------------------------------------------------
 
-typedef _OpenNative = Int32 Function(
-    Pointer<Utf8>, Int32, VarArgs<(Int32,)>);
+typedef _OpenNative = Int32 Function(Pointer<Utf8>, Int32, VarArgs<(Int32,)>);
 typedef _Open = int Function(Pointer<Utf8>, int, int);
 
 typedef _CloseNative = Int32 Function(Int32);
@@ -62,9 +62,14 @@ typedef _FcntlNative = Int32 Function(Int32, Int32, VarArgs<(Int64,)>);
 typedef _Fcntl = int Function(int, int, int);
 
 typedef _MmapNative = Pointer<Uint8> Function(
-    Pointer<Void>, Size, Int32, Int32, Int32, Int64);
-typedef _Mmap = Pointer<Uint8> Function(
-    Pointer<Void>, int, int, int, int, int);
+  Pointer<Void>,
+  Size,
+  Int32,
+  Int32,
+  Int32,
+  Int64,
+);
+typedef _Mmap = Pointer<Uint8> Function(Pointer<Void>, int, int, int, int, int);
 
 typedef _MunmapNative = Int32 Function(Pointer<Void>, Size);
 typedef _Munmap = int Function(Pointer<Void>, int);
@@ -91,11 +96,13 @@ typedef _MemsetNative = Pointer<Void> Function(Pointer<Void>, Int32, Size);
 typedef _Memset = Pointer<Void> Function(Pointer<Void>, int, int);
 
 typedef _PosixMemalignNative = Int32 Function(
-    Pointer<Pointer<Void>>, Size, Size);
+  Pointer<Pointer<Void>>,
+  Size,
+  Size,
+);
 typedef _PosixMemalign = int Function(Pointer<Pointer<Void>>, int, int);
 
-typedef _ClonefileNative = Int32 Function(
-    Pointer<Utf8>, Pointer<Utf8>, Int32);
+typedef _ClonefileNative = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Int32);
 typedef _Clonefile = int Function(Pointer<Utf8>, Pointer<Utf8>, int);
 
 final class _Fstore extends Struct {
@@ -201,7 +208,7 @@ final class PosixException implements Exception {
   final String _detail;
 
   PosixException(this.operation, this.errnoCode, this.path)
-      : _detail = _errnoText(errnoCode);
+    : _detail = _errnoText(errnoCode);
 
   @override
   String toString() {
@@ -227,7 +234,9 @@ String _errnoText(int code) {
 /// the call site with [Pointer.asFunction], so every lookup still gets a
 /// statically typed native function signature.
 Pointer<NativeFunction<NF>>? _tryNative<NF extends Function>(
-    DynamicLibrary lib, String symbol) {
+  DynamicLibrary lib,
+  String symbol,
+) {
   if (!lib.providesSymbol(symbol)) return null;
   try {
     return lib.lookup<NativeFunction<NF>>(symbol);
@@ -257,7 +266,8 @@ DynamicLibrary _loadLibc() {
     }
   }
   throw StateError(
-      'bytes: cannot load the POSIX C library for the mmap backend');
+    'bytes: cannot load the POSIX C library for the mmap backend',
+  );
 }
 
 _Libc? _cachedLibc;
@@ -307,27 +317,29 @@ class _Libc {
 
     pread = needsOffT64
         ? (_tryNative<_PreadNative>(lib, 'pread64')?.asFunction<_Pread>() ??
-            lib.lookupFunction<_PreadNative, _Pread>('pread'))
+              lib.lookupFunction<_PreadNative, _Pread>('pread'))
         : lib.lookupFunction<_PreadNative, _Pread>('pread');
     pwrite = needsOffT64
         ? (_tryNative<_PwriteNative>(lib, 'pwrite64')?.asFunction<_Pwrite>() ??
-            lib.lookupFunction<_PwriteNative, _Pwrite>('pwrite'))
+              lib.lookupFunction<_PwriteNative, _Pwrite>('pwrite'))
         : lib.lookupFunction<_PwriteNative, _Pwrite>('pwrite');
     lseek = needsOffT64
         ? (_tryNative<_LseekNative>(lib, 'lseek64')?.asFunction<_Lseek>() ??
-            lib.lookupFunction<_LseekNative, _Lseek>('lseek'))
+              lib.lookupFunction<_LseekNative, _Lseek>('lseek'))
         : lib.lookupFunction<_LseekNative, _Lseek>('lseek');
     ftruncate = needsOffT64
-        ? (_tryNative<_FtruncateNative>(lib, 'ftruncate64')
-                ?.asFunction<_Ftruncate>() ??
-            lib.lookupFunction<_FtruncateNative, _Ftruncate>('ftruncate'))
+        ? (_tryNative<_FtruncateNative>(
+                lib,
+                'ftruncate64',
+              )?.asFunction<_Ftruncate>() ??
+              lib.lookupFunction<_FtruncateNative, _Ftruncate>('ftruncate'))
         : lib.lookupFunction<_FtruncateNative, _Ftruncate>('ftruncate');
 
     fcntl = lib.lookupFunction<_FcntlNative, _Fcntl>('fcntl');
 
     mmap = needsOffT64
         ? (_tryNative<_MmapNative>(lib, 'mmap64')?.asFunction<_Mmap>() ??
-            lib.lookupFunction<_MmapNative, _Mmap>('mmap'))
+              lib.lookupFunction<_MmapNative, _Mmap>('mmap'))
         : lib.lookupFunction<_MmapNative, _Mmap>('mmap');
     munmap = lib.lookupFunction<_MunmapNative, _Munmap>('munmap');
     msync = lib.lookupFunction<_MsyncNative, _Msync>('msync');
@@ -336,36 +348,53 @@ class _Libc {
 
     // Not available on Darwin; not available on every libc build elsewhere.
     fallocate = needsOffT64
-        ? (_tryNative<_FallocateNative>(lib, 'fallocate64')
-                ?.asFunction<_Fallocate>() ??
-            _tryNative<_FallocateNative>(lib, 'fallocate')
-                ?.asFunction<_Fallocate>())
-        : _tryNative<_FallocateNative>(lib, 'fallocate')
-            ?.asFunction<_Fallocate>();
+        ? (_tryNative<_FallocateNative>(
+                lib,
+                'fallocate64',
+              )?.asFunction<_Fallocate>() ??
+              _tryNative<_FallocateNative>(
+                lib,
+                'fallocate',
+              )?.asFunction<_Fallocate>())
+        : _tryNative<_FallocateNative>(
+            lib,
+            'fallocate',
+          )?.asFunction<_Fallocate>();
 
     // explicit_bzero is the wipe that compilers may not elide (glibc >= 2.25,
     // musl, Darwin).  bionic does not export it; fall back to memset.
-    explicitBzero = _tryNative<_ExplicitBzeroNative>(lib, 'explicit_bzero')
-        ?.asFunction<_ExplicitBzero>();
+    explicitBzero = _tryNative<_ExplicitBzeroNative>(
+      lib,
+      'explicit_bzero',
+    )?.asFunction<_ExplicitBzero>();
     memset = lib.lookupFunction<_MemsetNative, _Memset>('memset');
     posixMemalign = lib.lookupFunction<_PosixMemalignNative, _PosixMemalign>(
-        'posix_memalign');
-    clonefile = _tryNative<_ClonefileNative>(lib, 'clonefile')
-        ?.asFunction<_Clonefile>();
+      'posix_memalign',
+    );
+    clonefile = _tryNative<_ClonefileNative>(
+      lib,
+      'clonefile',
+    )?.asFunction<_Clonefile>();
     strerror = lib.lookupFunction<_StrerrorNative, _Strerror>('strerror');
 
     _errnoFn = _isDarwin
         ? (_tryNative<_ErrnoNative>(lib, '__error')?.asFunction<_Errno>() ??
-            _tryNative<_ErrnoNative>(lib, '__errno_location')
-                ?.asFunction<_Errno>())
-        : (_tryNative<_ErrnoNative>(lib, '__errno_location')
-                ?.asFunction<_Errno>() ??
-            _tryNative<_ErrnoNative>(lib, '__errno')?.asFunction<_Errno>());
+              _tryNative<_ErrnoNative>(
+                lib,
+                '__errno_location',
+              )?.asFunction<_Errno>())
+        : (_tryNative<_ErrnoNative>(
+                lib,
+                '__errno_location',
+              )?.asFunction<_Errno>() ??
+              _tryNative<_ErrnoNative>(lib, '__errno')?.asFunction<_Errno>());
 
     // getpagesize() exists on glibc, musl, bionic and libSystem; sysconf would
     // need a platform-specific _SC_PAGESIZE constant.
-    _getpagesize = _tryNative<_GetpagesizeNative>(lib, 'getpagesize')
-        ?.asFunction<_Getpagesize>();
+    _getpagesize = _tryNative<_GetpagesizeNative>(
+      lib,
+      'getpagesize',
+    )?.asFunction<_Getpagesize>();
     final int rawPageSize = _getpagesize?.call() ?? 0;
     pageSize = rawPageSize > 0 ? rawPageSize : _defaultPageSize;
   }
@@ -405,10 +434,12 @@ final class PosixMmapFile extends MmapFile {
   final int _fd;
   final int _statusFlags;
   final bool direct;
+  final bool _mmapCache;
   final Set<PosixMappedRegion> _regions = <PosixMappedRegion>{};
   int _size;
   int _scratchCapacity = 0;
   Pointer<Uint8> _scratch = nullptr;
+  MappedRegion? _ioMapRegion;
   bool _closed = false;
 
   @override
@@ -416,18 +447,41 @@ final class PosixMmapFile extends MmapFile {
   @override
   final bool readOnly;
 
-  PosixMmapFile._(this._libc, this._fd, this.path, this.readOnly, this._size,
-      this._statusFlags, this.direct);
+  PosixMmapFile._(
+    this._libc,
+    this._fd,
+    this.path,
+    this.readOnly,
+    this._size,
+    this._statusFlags,
+    this.direct,
+    this._mmapCache,
+  );
 
-  static Future<MmapFile> open(String path,
-          {bool create = true, bool readOnly = false, bool direct = false}) async =>
-      openSync(
-          path, create: create, readOnly: readOnly, direct: direct);
+  static Future<MmapFile> open(
+    String path, {
+    bool create = true,
+    bool readOnly = false,
+    bool direct = false,
+    bool mmapCache = true,
+  }) async => openSync(
+    path,
+    create: create,
+    readOnly: readOnly,
+    direct: direct,
+    mmapCache: mmapCache,
+  );
 
-  static MmapFile openSync(String path,
-      {bool create = true, bool readOnly = false, bool direct = false}) {
+  static MmapFile openSync(
+    String path, {
+    bool create = true,
+    bool readOnly = false,
+    bool direct = false,
+    bool mmapCache = true,
+  }) {
     final libc = _posixLibc;
-    final int flags = (readOnly ? _openRdonly : _openRdwr) |
+    final int flags =
+        (readOnly ? _openRdonly : _openRdwr) |
         (create ? _openCreat : 0) |
         _openCloexec |
         (_isDarwin ? 0 : (direct ? _openDirect : 0));
@@ -450,8 +504,16 @@ final class PosixMmapFile extends MmapFile {
     // Capture the descriptor's status flags once for diagnostics (and to
     // prove the fd really is not append-mode).
     final statusFlags = libc.fcntl(fd, _fGetfl, 0);
-    final file = PosixMmapFile._(libc, fd, path, readOnly, 0,
-        statusFlags < 0 ? 0 : statusFlags, direct);
+    final file = PosixMmapFile._(
+      libc,
+      fd,
+      path,
+      readOnly,
+      0,
+      statusFlags < 0 ? 0 : statusFlags,
+      direct,
+      mmapCache,
+    );
     try {
       file._size = file._querySize();
     } catch (_) {
@@ -500,7 +562,8 @@ final class PosixMmapFile extends MmapFile {
     _checkOpen();
     if (direct) {
       throw UnsupportedError(
-          'Direct I/O files cannot be memory-mapped; use readAt/writeAt.');
+        'Direct I/O files cannot be memory-mapped; use readAt/writeAt.',
+      );
     }
     if (writable && readOnly) {
       throw StateError('Cannot create a writable mapping for $path');
@@ -527,13 +590,20 @@ final class PosixMmapFile extends MmapFile {
     final delta = offset - base;
     final mapLength = requested + delta;
     final prot = writable ? (_protRead | _protWrite) : _protRead;
-    final pointer = _libc.mmap(
-        nullptr, mapLength, prot, _mapShared, _fd, base);
+    final pointer = _libc.mmap(nullptr, mapLength, prot, _mapShared, _fd, base);
     if (_isMapFailed(pointer)) {
       throw PosixException('mmap', _libc.errno, path);
     }
     final region = PosixMappedRegion._(
-        this, _libc, pointer, mapLength, delta, offset, requested, writable);
+      this,
+      _libc,
+      pointer,
+      mapLength,
+      delta,
+      offset,
+      requested,
+      writable,
+    );
     _regions.add(region);
     return region;
   }
@@ -543,8 +613,31 @@ final class PosixMmapFile extends MmapFile {
   }
 
   void _closeRegions() {
+    _ioMapRegion = null;
     for (final region in _regions.toList(growable: false)) {
       region.close();
+    }
+  }
+
+  void _dropIoMap() {
+    final region = _ioMapRegion;
+    _ioMapRegion = null;
+    region?.close();
+  }
+
+  MappedRegion? _ensureIoMap() {
+    if (!_mmapCache || direct || _size <= 0) return null;
+    final current = _ioMapRegion;
+    if (current != null && !current.isClosed && current.length == _size) {
+      return current;
+    }
+    _dropIoMap();
+    try {
+      final region = map(offset: 0, length: _size, writable: !readOnly);
+      _ioMapRegion = region;
+      return region;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -563,19 +656,23 @@ final class PosixMmapFile extends MmapFile {
         if (rc != 0 || _scratch.address == 0) {
           _scratch = nullptr;
           _scratchCapacity = 0;
-          throw StateError('bytes: posix_memalign($capacity) failed ($rc) '
-              'for $path');
+          throw StateError(
+            'bytes: posix_memalign($capacity) failed ($rc) '
+            'for $path',
+          );
         }
       } finally {
         calloc.free(out);
       }
     } else {
-      _scratch = calloc<Uint8>(capacity);
+      _scratch = nativeScratchAllocator.allocate<Uint8>(capacity);
     }
     if (_scratch.address == 0) {
       _scratchCapacity = 0;
-      throw StateError('bytes: out of memory allocating $capacity-byte '
-          'scratch buffer for $path');
+      throw StateError(
+        'bytes: out of memory allocating $capacity-byte '
+        'scratch buffer for $path',
+      );
     }
     _scratchCapacity = capacity;
   }
@@ -585,7 +682,7 @@ final class PosixMmapFile extends MmapFile {
     if (direct) {
       malloc.free(_scratch);
     } else {
-      calloc.free(_scratch);
+      nativeScratchAllocator.free(_scratch);
     }
     _scratch = nullptr;
     _scratchCapacity = 0;
@@ -620,17 +717,26 @@ final class PosixMmapFile extends MmapFile {
     final e = end ?? dst.length;
     RangeError.checkValidRange(start, e, dst.length);
     if (offset < 0) throw RangeError.value(offset, 'offset');
-    _size = _querySize();
-    if (offset >= _size) return 0;
-    final wanted = math.min(e - start, _size - offset);
+    final requested = e - start;
+    if (offset >= _size || offset + requested > _size) {
+      _size = _querySize();
+      if (offset >= _size) return 0;
+    }
+    final wanted = math.min(requested, _size - offset);
     if (wanted <= 0) return 0;
 
+    final cache = _ensureIoMap();
+    if (cache != null && offset + wanted <= cache.length) {
+      dst.setRange(start, start + wanted, cache.bytes, offset);
+      return wanted;
+    }
+
     if (direct) {
-      if (offset % _directAlignment != 0 ||
-          wanted % _directAlignment != 0) {
+      if (offset % _directAlignment != 0 || wanted % _directAlignment != 0) {
         throw ArgumentError(
-            'Direct I/O read requires 4 KiB aligned offset and length '
-            '(offset=$offset, length=$wanted).');
+          'Direct I/O read requires 4 KiB aligned offset and length '
+          '(offset=$offset, length=$wanted).',
+        );
       }
       var done = 0;
       while (done < wanted) {
@@ -638,8 +744,11 @@ final class PosixMmapFile extends MmapFile {
         _ensureScratch(n);
         final got = _readChunk(offset + done, _scratch, n);
         if (got <= 0) break;
-        dst.setRange(start + done, start + done + got,
-            _scratch.asTypedList(got));
+        dst.setRange(
+          start + done,
+          start + done + got,
+          _scratch.asTypedList(got),
+        );
         done += got;
         if (got < n) break;
       }
@@ -652,8 +761,7 @@ final class PosixMmapFile extends MmapFile {
       _ensureScratch(n);
       final got = _readChunk(offset + done, _scratch, n);
       if (got <= 0) break;
-      dst.setRange(
-          start + done, start + done + got, _scratch.asTypedList(got));
+      dst.setRange(start + done, start + done + got, _scratch.asTypedList(got));
       done += got;
       if (got < n) break;
     }
@@ -670,11 +778,17 @@ final class PosixMmapFile extends MmapFile {
     if (wanted == 0) return 0;
 
     if (direct &&
-        (offset % _directAlignment != 0 ||
-            wanted % _directAlignment != 0)) {
+        (offset % _directAlignment != 0 || wanted % _directAlignment != 0)) {
       throw ArgumentError(
-          'Direct I/O write requires 4 KiB aligned offset and length '
-          '(offset=$offset, length=$wanted).');
+        'Direct I/O write requires 4 KiB aligned offset and length '
+        '(offset=$offset, length=$wanted).',
+      );
+    }
+
+    final cache = _ensureIoMap();
+    if (cache != null && offset + wanted <= cache.length) {
+      cache.bytes.setRange(offset, offset + wanted, src, start);
+      return wanted;
     }
 
     var done = 0;
@@ -729,6 +843,7 @@ final class PosixMmapFile extends MmapFile {
   @override
   void flush() {
     _checkOpen();
+    _ioMapRegion?.flush();
     for (final region in _regions.toList(growable: false)) {
       region.flush();
     }
@@ -769,13 +884,20 @@ final class PosixMmapFile extends MmapFile {
       throw RangeError('punchHole range out of bounds');
     }
     if (length == 0) return;
+    _dropIoMap();
     final fallocate = _libc.fallocate;
     if (_isDarwin || fallocate == null) {
       throw UnsupportedError('punchHole is not supported on this platform');
     }
     final rc = fallocate(
-        _fd, _fallocKeepSize | _fallocPunchHole, offset, length);
-    if (rc < 0) throw PosixException('fallocate(PUNCH_HOLE)', _libc.errno, path);
+      _fd,
+      _fallocKeepSize | _fallocPunchHole,
+      offset,
+      length,
+    );
+    if (rc < 0) {
+      throw PosixException('fallocate(PUNCH_HOLE)', _libc.errno, path);
+    }
     _size = _querySize();
   }
 
@@ -787,7 +909,8 @@ final class PosixMmapFile extends MmapFile {
     int? length,
   }) {
     throw UnsupportedError(
-        'cloneRangeFrom requires filesystem-specific support; use copy');
+      'cloneRangeFrom requires filesystem-specific support; use copy',
+    );
   }
 
   @override
@@ -851,7 +974,8 @@ final class PosixMmapFile extends MmapFile {
   }
 
   @override
-  String toString() => 'PosixMmapFile($path, size: $_size, '
+  String toString() =>
+      'PosixMmapFile($path, size: $_size, '
       'readOnly: $readOnly, '
       'flags: 0x${_statusFlags.toRadixString(16)})';
 }
@@ -897,9 +1021,16 @@ final class PosixMappedRegion implements MappedRegion {
   final int length;
   bool _closed = false;
 
-  PosixMappedRegion._(this._owner, this._libc, this._base, this._mapLength,
-      this._delta, this.offset, this.length, this._writable)
-      : _all = _base.asTypedList(_mapLength);
+  PosixMappedRegion._(
+    this._owner,
+    this._libc,
+    this._base,
+    this._mapLength,
+    this._delta,
+    this.offset,
+    this.length,
+    this._writable,
+  ) : _all = _base.asTypedList(_mapLength);
 
   @override
   Uint8List get bytes {
@@ -946,16 +1077,22 @@ final class PosixMappedRegion implements MappedRegion {
   void prefetch({int offset = 0, int? length}) {
     final range = _hintRange(offset, length);
     if (range.length == 0) return;
-    _libc.madvise((_base + _delta + range.offset).cast(), range.length,
-        _madvWillNeed);
+    _libc.madvise(
+      (_base + _delta + range.offset).cast(),
+      range.length,
+      _madvWillNeed,
+    );
   }
 
   @override
   void discard({int offset = 0, int? length}) {
     final range = _hintRange(offset, length);
     if (range.length == 0) return;
-    _libc.madvise((_base + _delta + range.offset).cast(), range.length,
-        _madvDontNeed);
+    _libc.madvise(
+      (_base + _delta + range.offset).cast(),
+      range.length,
+      _madvDontNeed,
+    );
   }
 
   /// Hints that this window will be read sequentially (`MADV_SEQUENTIAL`).

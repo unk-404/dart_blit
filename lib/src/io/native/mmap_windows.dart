@@ -7,26 +7,58 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import 'mmap_base.dart';
+import 'native_allocator.dart';
 
 // ---------------------------------------------------------------------------
 // Win32 ffI bindings (x64, C calling convention)
 // ---------------------------------------------------------------------------
 
-typedef _CreateFileW_C = IntPtr Function(Pointer<Utf16>, Uint32, Uint32,
-    Pointer<Void>, Uint32, Uint32, IntPtr);
+typedef _CreateFileW_C = IntPtr Function(
+  Pointer<Utf16>,
+  Uint32,
+  Uint32,
+  Pointer<Void>,
+  Uint32,
+  Uint32,
+  IntPtr,
+);
 typedef _CreateFileW = int Function(
-    Pointer<Utf16>, int, int, Pointer<Void>, int, int, int);
+  Pointer<Utf16>,
+  int,
+  int,
+  Pointer<Void>,
+  int,
+  int,
+  int,
+);
 
 typedef _GetFileSizeEx_C = Int32 Function(IntPtr, Pointer<Int64>);
 typedef _GetFileSizeEx = int Function(int, Pointer<Int64>);
 
-typedef _CreateFileMappingW_C = IntPtr Function(IntPtr, Pointer<Void>, Uint32,
-    Uint32, Uint32, Pointer<Utf16>);
+typedef _CreateFileMappingW_C = IntPtr Function(
+  IntPtr,
+  Pointer<Void>,
+  Uint32,
+  Uint32,
+  Uint32,
+  Pointer<Utf16>,
+);
 typedef _CreateFileMappingW = int Function(
-    int, Pointer<Void>, int, int, int, Pointer<Utf16>);
+  int,
+  Pointer<Void>,
+  int,
+  int,
+  int,
+  Pointer<Utf16>,
+);
 
 typedef _MapViewOfFile_C = Pointer<Uint8> Function(
-    IntPtr, Uint32, Uint32, Uint32, Size);
+  IntPtr,
+  Uint32,
+  Uint32,
+  Uint32,
+  Size,
+);
 typedef _MapViewOfFile = Pointer<Uint8> Function(int, int, int, int, int);
 
 typedef _UnmapViewOfFile_C = Int32 Function(Pointer<Uint8>);
@@ -39,24 +71,66 @@ typedef _FlushFileBuffers_C = Int32 Function(IntPtr);
 typedef _FlushFileBuffers = int Function(int);
 
 typedef _SetFilePointerEx_C = Int32 Function(
-    IntPtr, Int64, Pointer<Int64>, Uint32);
+  IntPtr,
+  Int64,
+  Pointer<Int64>,
+  Uint32,
+);
 typedef _SetFilePointerEx = int Function(int, int, Pointer<Int64>, int);
 
 typedef _SetEndOfFile_C = Int32 Function(IntPtr);
 typedef _SetEndOfFile = int Function(int);
 
-typedef _DeviceIoControl_C = Int32 Function(IntPtr, Uint32, Pointer<Void>,
-    Uint32, Pointer<Void>, Uint32, Pointer<Uint32>, Pointer<Void>);
+typedef _DeviceIoControl_C = Int32 Function(
+  IntPtr,
+  Uint32,
+  Pointer<Void>,
+  Uint32,
+  Pointer<Void>,
+  Uint32,
+  Pointer<Uint32>,
+  Pointer<Void>,
+);
 typedef _DeviceIoControl = int Function(
-    int, int, Pointer<Void>, int, Pointer<Void>, int, Pointer<Uint32>, Pointer<Void>);
+  int,
+  int,
+  Pointer<Void>,
+  int,
+  Pointer<Void>,
+  int,
+  Pointer<Uint32>,
+  Pointer<Void>,
+);
 
 typedef _ReadFile_C = Int32 Function(
-    IntPtr, Pointer<Uint8>, Uint32, Pointer<Uint32>, Pointer<Void>);
-typedef _ReadFile = int Function(int, Pointer<Uint8>, int, Pointer<Uint32>, Pointer<Void>);
+  IntPtr,
+  Pointer<Uint8>,
+  Uint32,
+  Pointer<Uint32>,
+  Pointer<Void>,
+);
+typedef _ReadFile = int Function(
+  int,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint32>,
+  Pointer<Void>,
+);
 
 typedef _WriteFile_C = Int32 Function(
-    IntPtr, Pointer<Uint8>, Uint32, Pointer<Uint32>, Pointer<Void>);
-typedef _WriteFile = int Function(int, Pointer<Uint8>, int, Pointer<Uint32>, Pointer<Void>);
+  IntPtr,
+  Pointer<Uint8>,
+  Uint32,
+  Pointer<Uint32>,
+  Pointer<Void>,
+);
+typedef _WriteFile = int Function(
+  int,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint32>,
+  Pointer<Void>,
+);
 
 typedef _GetLastError_C = Uint32 Function();
 typedef _GetLastError = int Function();
@@ -68,23 +142,57 @@ typedef _Memset_C = Pointer<Void> Function(Pointer<Void>, Int32, Size);
 typedef _Memset = Pointer<Void> Function(Pointer<Void>, int, int);
 
 typedef _VirtualAlloc_C = Pointer<Uint8> Function(
-    Pointer<Void>, Size, Uint32, Uint32);
-typedef _VirtualAlloc = Pointer<Uint8> Function(
-    Pointer<Void>, int, int, int);
+  Pointer<Void>,
+  Size,
+  Uint32,
+  Uint32,
+);
+typedef _VirtualAlloc = Pointer<Uint8> Function(Pointer<Void>, int, int, int);
 
 typedef _VirtualFree_C = Int32 Function(Pointer<Void>, Size, Uint32);
 typedef _VirtualFree = int Function(Pointer<Void>, int, int);
 
 typedef _VirtualAlloc2_C = Pointer<Uint8> Function(
-    IntPtr, Pointer<Void>, Size, Uint32, Uint32, Pointer<Void>, Uint32);
+  IntPtr,
+  Pointer<Void>,
+  Size,
+  Uint32,
+  Uint32,
+  Pointer<Void>,
+  Uint32,
+);
 typedef _VirtualAlloc2 = Pointer<Uint8> Function(
-    int, Pointer<Void>, int, int, int, Pointer<Void>, int);
+  int,
+  Pointer<Void>,
+  int,
+  int,
+  int,
+  Pointer<Void>,
+  int,
+);
 
 typedef _MapViewOfFile3_C = Pointer<Uint8> Function(
-    IntPtr, IntPtr, Pointer<Void>, Uint64, Size, Uint32, Uint32,
-    Pointer<Void>, Uint32);
+  IntPtr,
+  IntPtr,
+  Pointer<Void>,
+  Uint64,
+  Size,
+  Uint32,
+  Uint32,
+  Pointer<Void>,
+  Uint32,
+);
 typedef _MapViewOfFile3 = Pointer<Uint8> Function(
-    int, int, Pointer<Void>, int, int, int, int, Pointer<Void>, int);
+  int,
+  int,
+  Pointer<Void>,
+  int,
+  int,
+  int,
+  int,
+  Pointer<Void>,
+  int,
+);
 
 typedef _UnmapViewOfFile2_C = Int32 Function(IntPtr, Pointer<Void>, Uint32);
 typedef _UnmapViewOfFile2 = int Function(int, Pointer<Void>, int);
@@ -100,9 +208,17 @@ final class _MemoryRangeEntry extends Struct {
 }
 
 typedef _PrefetchVirtualMemory_C = Int32 Function(
-    IntPtr, Size, Pointer<_MemoryRangeEntry>, Uint32);
+  IntPtr,
+  Size,
+  Pointer<_MemoryRangeEntry>,
+  Uint32,
+);
 typedef _PrefetchVirtualMemory = int Function(
-    int, int, Pointer<_MemoryRangeEntry>, int);
+  int,
+  int,
+  Pointer<_MemoryRangeEntry>,
+  int,
+);
 
 final class _FileZeroDataInformation extends Struct {
   @Int64()
@@ -164,7 +280,8 @@ class WindowsException implements Exception {
   WindowsException(this.operation, this.code, this.path);
 
   @override
-  String toString() => 'WindowsException: $operation failed '
+  String toString() =>
+      'WindowsException: $operation failed '
       '(win32 error $code) for $path';
 }
 
@@ -172,54 +289,55 @@ class _Win32 {
   final DynamicLibrary _k32 = DynamicLibrary.open('kernel32.dll');
   final DynamicLibrary _crt = DynamicLibrary.open('msvcrt.dll');
 
-  late final _CreateFileW createFileW =
-      _k32.lookupFunction<_CreateFileW_C, _CreateFileW>('CreateFileW');
-  late final _GetFileSizeEx getFileSizeEx =
-      _k32.lookupFunction<_GetFileSizeEx_C, _GetFileSizeEx>('GetFileSizeEx');
-  late final _CreateFileMappingW createFileMappingW =
-      _k32.lookupFunction<_CreateFileMappingW_C, _CreateFileMappingW>(
-          'CreateFileMappingW');
-  late final _MapViewOfFile mapViewOfFile =
-      _k32.lookupFunction<_MapViewOfFile_C, _MapViewOfFile>('MapViewOfFile');
-  late final _UnmapViewOfFile unmapViewOfFile =
-      _k32.lookupFunction<_UnmapViewOfFile_C, _UnmapViewOfFile>(
-          'UnmapViewOfFile');
-  late final _FlushViewOfFile flushViewOfFile =
-      _k32.lookupFunction<_FlushViewOfFile_C, _FlushViewOfFile>(
-          'FlushViewOfFile');
-  late final _FlushFileBuffers flushFileBuffers =
-      _k32.lookupFunction<_FlushFileBuffers_C, _FlushFileBuffers>(
-          'FlushFileBuffers');
-  late final _SetFilePointerEx setFilePointerEx =
-      _k32.lookupFunction<_SetFilePointerEx_C, _SetFilePointerEx>(
-          'SetFilePointerEx');
-  late final _SetEndOfFile setEndOfFile =
-      _k32.lookupFunction<_SetEndOfFile_C, _SetEndOfFile>('SetEndOfFile');
-  late final _DeviceIoControl deviceIoControl =
-      _k32.lookupFunction<_DeviceIoControl_C, _DeviceIoControl>(
-          'DeviceIoControl');
-  late final _ReadFile readFile =
-      _k32.lookupFunction<_ReadFile_C, _ReadFile>('ReadFile');
-  late final _WriteFile writeFile =
-      _k32.lookupFunction<_WriteFile_C, _WriteFile>('WriteFile');
-  late final _GetLastError getLastError =
-      _k32.lookupFunction<_GetLastError_C, _GetLastError>('GetLastError');
-  late final _CloseHandle closeHandle =
-      _k32.lookupFunction<_CloseHandle_C, _CloseHandle>('CloseHandle');
-  late final _Memset memset =
-      _crt.lookupFunction<_Memset_C, _Memset>('memset');
+  late final _CreateFileW createFileW = _k32
+      .lookupFunction<_CreateFileW_C, _CreateFileW>('CreateFileW');
+  late final _GetFileSizeEx getFileSizeEx = _k32
+      .lookupFunction<_GetFileSizeEx_C, _GetFileSizeEx>('GetFileSizeEx');
+  late final _CreateFileMappingW createFileMappingW = _k32
+      .lookupFunction<_CreateFileMappingW_C, _CreateFileMappingW>(
+        'CreateFileMappingW',
+      );
+  late final _MapViewOfFile mapViewOfFile = _k32
+      .lookupFunction<_MapViewOfFile_C, _MapViewOfFile>('MapViewOfFile');
+  late final _UnmapViewOfFile unmapViewOfFile = _k32
+      .lookupFunction<_UnmapViewOfFile_C, _UnmapViewOfFile>('UnmapViewOfFile');
+  late final _FlushViewOfFile flushViewOfFile = _k32
+      .lookupFunction<_FlushViewOfFile_C, _FlushViewOfFile>('FlushViewOfFile');
+  late final _FlushFileBuffers flushFileBuffers = _k32
+      .lookupFunction<_FlushFileBuffers_C, _FlushFileBuffers>(
+        'FlushFileBuffers',
+      );
+  late final _SetFilePointerEx setFilePointerEx = _k32
+      .lookupFunction<_SetFilePointerEx_C, _SetFilePointerEx>(
+        'SetFilePointerEx',
+      );
+  late final _SetEndOfFile setEndOfFile = _k32
+      .lookupFunction<_SetEndOfFile_C, _SetEndOfFile>('SetEndOfFile');
+  late final _DeviceIoControl deviceIoControl = _k32
+      .lookupFunction<_DeviceIoControl_C, _DeviceIoControl>('DeviceIoControl');
+  late final _ReadFile readFile = _k32.lookupFunction<_ReadFile_C, _ReadFile>(
+    'ReadFile',
+  );
+  late final _WriteFile writeFile = _k32
+      .lookupFunction<_WriteFile_C, _WriteFile>('WriteFile');
+  late final _GetLastError getLastError = _k32
+      .lookupFunction<_GetLastError_C, _GetLastError>('GetLastError');
+  late final _CloseHandle closeHandle = _k32
+      .lookupFunction<_CloseHandle_C, _CloseHandle>('CloseHandle');
+  late final _Memset memset = _crt.lookupFunction<_Memset_C, _Memset>('memset');
 
-  late final _VirtualAlloc virtualAlloc =
-      _k32.lookupFunction<_VirtualAlloc_C, _VirtualAlloc>('VirtualAlloc');
-  late final _VirtualFree virtualFree =
-      _k32.lookupFunction<_VirtualFree_C, _VirtualFree>('VirtualFree');
+  late final _VirtualAlloc virtualAlloc = _k32
+      .lookupFunction<_VirtualAlloc_C, _VirtualAlloc>('VirtualAlloc');
+  late final _VirtualFree virtualFree = _k32
+      .lookupFunction<_VirtualFree_C, _VirtualFree>('VirtualFree');
   late final _VirtualAlloc2? virtualAlloc2;
   late final _MapViewOfFile3? mapViewOfFile3;
   late final _UnmapViewOfFile2? unmapViewOfFile2;
   late final _GetLargePageMinimum? getLargePageMinimum;
-  late final _PrefetchVirtualMemory prefetchVirtualMemory =
-      _k32.lookupFunction<_PrefetchVirtualMemory_C, _PrefetchVirtualMemory>(
-          'PrefetchVirtualMemory');
+  late final _PrefetchVirtualMemory prefetchVirtualMemory = _k32
+      .lookupFunction<_PrefetchVirtualMemory_C, _PrefetchVirtualMemory>(
+        'PrefetchVirtualMemory',
+      );
 
   _Win32() {
     // Warm up every lazy lookupFunction once, before any operation whose
@@ -243,29 +361,31 @@ class _Win32 {
     virtualAlloc;
     virtualFree;
     try {
-      virtualAlloc2 =
-          _k32.lookupFunction<_VirtualAlloc2_C, _VirtualAlloc2>(
-              'VirtualAlloc2');
+      virtualAlloc2 = _k32.lookupFunction<_VirtualAlloc2_C, _VirtualAlloc2>(
+        'VirtualAlloc2',
+      );
     } on ArgumentError {
       virtualAlloc2 = null;
     }
     try {
-      mapViewOfFile3 =
-          _k32.lookupFunction<_MapViewOfFile3_C, _MapViewOfFile3>(
-              'MapViewOfFile3');
+      mapViewOfFile3 = _k32.lookupFunction<_MapViewOfFile3_C, _MapViewOfFile3>(
+        'MapViewOfFile3',
+      );
     } on ArgumentError {
       mapViewOfFile3 = null;
     }
     try {
-      unmapViewOfFile2 =
-          _k32.lookupFunction<_UnmapViewOfFile2_C, _UnmapViewOfFile2>(
-              'UnmapViewOfFile2');
+      unmapViewOfFile2 = _k32
+          .lookupFunction<_UnmapViewOfFile2_C, _UnmapViewOfFile2>(
+            'UnmapViewOfFile2',
+          );
     } on ArgumentError {
       unmapViewOfFile2 = null;
     }
-    getLargePageMinimum =
-        _k32.lookupFunction<_GetLargePageMinimum_C, _GetLargePageMinimum>(
-            'GetLargePageMinimum');
+    getLargePageMinimum = _k32
+        .lookupFunction<_GetLargePageMinimum_C, _GetLargePageMinimum>(
+          'GetLargePageMinimum',
+        );
     prefetchVirtualMemory;
   }
 
@@ -282,6 +402,9 @@ final class WindowsMmapFile extends MmapFile {
   int _size = 0;
   int _scratchCapacity = 0;
   Pointer<Uint8> _scratch = nullptr;
+  Pointer<Int64> _ioPosition = nullptr;
+  Pointer<Uint32> _ioCount = nullptr;
+  MappedRegion? _ioMapRegion;
   bool _closed = false;
 
   @override
@@ -290,30 +413,46 @@ final class WindowsMmapFile extends MmapFile {
   final bool readOnly;
   final bool direct;
   final bool _largePagesRequested;
+  final bool _mmapCache;
   bool _largePagesActive = false;
 
-  WindowsMmapFile._(this._win, this._handle, this.path, this.readOnly,
-      this.direct, this._largePagesRequested);
+  WindowsMmapFile._(
+    this._win,
+    this._handle,
+    this.path,
+    this.readOnly,
+    this.direct,
+    this._largePagesRequested,
+    this._mmapCache,
+  );
 
   @override
   bool get usesLargePages => _largePagesActive;
 
-  static Future<MmapFile> open(String path,
-          {bool create = true,
-          bool readOnly = false,
-          bool direct = false,
-          bool largePages = false}) async =>
-      openSync(path,
-          create: create,
-          readOnly: readOnly,
-          direct: direct,
-          largePages: largePages);
+  static Future<MmapFile> open(
+    String path, {
+    bool create = true,
+    bool readOnly = false,
+    bool direct = false,
+    bool largePages = false,
+    bool mmapCache = true,
+  }) async => openSync(
+    path,
+    create: create,
+    readOnly: readOnly,
+    direct: direct,
+    largePages: largePages,
+    mmapCache: mmapCache,
+  );
 
-  static MmapFile openSync(String path,
-      {bool create = true,
-      bool readOnly = false,
-      bool direct = false,
-      bool largePages = false}) {
+  static MmapFile openSync(
+    String path, {
+    bool create = true,
+    bool readOnly = false,
+    bool direct = false,
+    bool largePages = false,
+    bool mmapCache = true,
+  }) {
     final win = _Win32();
     final p = path.toNativeUtf16();
     final int handle;
@@ -334,7 +473,14 @@ final class WindowsMmapFile extends MmapFile {
       throw WindowsException('CreateFileW', win.getLastError(), path);
     }
     final file = WindowsMmapFile._(
-        win, handle, path, readOnly, direct, largePages);
+      win,
+      handle,
+      path,
+      readOnly,
+      direct,
+      largePages,
+      mmapCache,
+    );
     file._size = file._querySize();
     return file;
   }
@@ -394,7 +540,8 @@ final class WindowsMmapFile extends MmapFile {
     final map3 = _win.mapViewOfFile3;
     if (alloc == null || map3 == null) {
       throw UnsupportedError(
-          'MapViewOfFile3/VirtualAlloc2 are unavailable (Windows 10 1803+)');
+        'MapViewOfFile3/VirtualAlloc2 are unavailable (Windows 10 1803+)',
+      );
     }
     final base = alloc(
       -1,
@@ -461,7 +608,8 @@ final class WindowsMmapFile extends MmapFile {
     _checkOpen();
     if (direct) {
       throw UnsupportedError(
-          'Direct I/O files cannot be memory-mapped; use readAt/writeAt.');
+        'Direct I/O files cannot be memory-mapped; use readAt/writeAt.',
+      );
     }
     if (writable && readOnly) {
       throw StateError('Cannot create a writable mapping for $path');
@@ -492,7 +640,15 @@ final class WindowsMmapFile extends MmapFile {
     );
     if (ptr.address == 0) _win.fail('MapViewOfFile', path);
     final region = WindowsMappedRegion._(
-        this, _win, ptr, mapLength, delta, offset, len, writable);
+      this,
+      _win,
+      ptr,
+      mapLength,
+      delta,
+      offset,
+      len,
+      writable,
+    );
     _regions.add(region);
     return region;
   }
@@ -502,12 +658,35 @@ final class WindowsMmapFile extends MmapFile {
   }
 
   void _closeMapping() {
+    _ioMapRegion = null;
     for (final region in _regions.toList()) {
       region.close();
     }
     if (_mapping != 0) {
       _win.closeHandle(_mapping);
       _mapping = 0;
+    }
+  }
+
+  void _dropIoMap() {
+    final region = _ioMapRegion;
+    _ioMapRegion = null;
+    region?.close();
+  }
+
+  MappedRegion? _ensureIoMap() {
+    if (!_mmapCache || direct || _size <= 0) return null;
+    final current = _ioMapRegion;
+    if (current != null && !current.isClosed && current.length == _size) {
+      return current;
+    }
+    _dropIoMap();
+    try {
+      final region = map(offset: 0, length: _size, writable: !readOnly);
+      _ioMapRegion = region;
+      return region;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -522,8 +701,7 @@ final class WindowsMmapFile extends MmapFile {
     if (direct && _largePagesRequested) {
       final minimum = _win.getLargePageMinimum?.call() ?? 0;
       if (minimum > 0) {
-        final largeCapacity =
-            ((capacity + minimum - 1) ~/ minimum) * minimum;
+        final largeCapacity = ((capacity + minimum - 1) ~/ minimum) * minimum;
         final large = _win.virtualAlloc(
           nullptr,
           largeCapacity,
@@ -540,12 +718,15 @@ final class WindowsMmapFile extends MmapFile {
     if (_scratch.address == 0) {
       _scratch = direct
           ? _win.virtualAlloc(
-              nullptr, capacity, _memCommit | _memReserve, _pageReadWrite)
-          : calloc<Uint8>(capacity);
+              nullptr,
+              capacity,
+              _memCommit | _memReserve,
+              _pageReadWrite,
+            )
+          : nativeScratchAllocator.allocate<Uint8>(capacity);
     }
     if (_scratch.address == 0) {
-      throw WindowsException(
-          direct ? 'VirtualAlloc' : 'calloc', -1, path);
+      throw WindowsException(direct ? 'VirtualAlloc' : 'calloc', -1, path);
     }
     _scratchCapacity = capacity;
   }
@@ -555,55 +736,58 @@ final class WindowsMmapFile extends MmapFile {
     if (direct) {
       _win.virtualFree(_scratch.cast(), 0, _memRelease);
     } else {
-      calloc.free(_scratch);
+      nativeScratchAllocator.free(_scratch);
     }
     _scratch = nullptr;
     _scratchCapacity = 0;
   }
 
-  int _readChunk(int offset, Pointer<Uint8> dst, int count) {
-    final pos = calloc<Int64>();
-    final read = calloc<Uint32>();
-    try {
-      if (_win.setFilePointerEx(_handle, offset, pos, 0) == 0) {
-        _win.fail('SetFilePointerEx(read)', path);
-      }
-      final ok = _win.readFile(_handle, dst, count, read, nullptr);
-      final err = _win.getLastError();
-      if (ok == 0) {
-        if (err == _errorHandleEof) return 0;
-        throw WindowsException(
-            'ReadFile(offset=$offset,count=$count,ok=$ok,err=$err)',
-            err,
-            path);
-      }
-      return read.value;
-    } finally {
-      calloc.free(read);
-      calloc.free(pos);
+  void _freeIoScratch() {
+    if (_ioPosition.address != 0) {
+      calloc.free(_ioPosition);
+      _ioPosition = nullptr;
+    }
+    if (_ioCount.address != 0) {
+      calloc.free(_ioCount);
+      _ioCount = nullptr;
     }
   }
 
-  int _writeChunk(int offset, Pointer<Uint8> src, int count) {
-    final pos = calloc<Int64>();
-    final written = calloc<Uint32>();
-    try {
-      if (_win.setFilePointerEx(_handle, offset, pos, 0) == 0) {
-        _win.fail('SetFilePointerEx(write)', path);
-      }
-      final ok = _win.writeFile(_handle, src, count, written, nullptr);
-      final err = _win.getLastError();
-      if (ok == 0) {
-        throw WindowsException(
-            'WriteFile(offset=$offset,count=$count,ok=$ok,err=$err)',
-            err,
-            path);
-      }
-      return written.value;
-    } finally {
-      calloc.free(written);
-      calloc.free(pos);
+  int _readChunk(int offset, Pointer<Uint8> dst, int count) {
+    _ioPosition = _ioPosition.address == 0 ? calloc<Int64>() : _ioPosition;
+    _ioCount = _ioCount.address == 0 ? calloc<Uint32>() : _ioCount;
+    if (_win.setFilePointerEx(_handle, offset, _ioPosition, 0) == 0) {
+      _win.fail('SetFilePointerEx(read)', path);
     }
+    final ok = _win.readFile(_handle, dst, count, _ioCount, nullptr);
+    final err = _win.getLastError();
+    if (ok == 0) {
+      if (err == _errorHandleEof) return 0;
+      throw WindowsException(
+        'ReadFile(offset=$offset,count=$count,ok=$ok,err=$err)',
+        err,
+        path,
+      );
+    }
+    return _ioCount.value;
+  }
+
+  int _writeChunk(int offset, Pointer<Uint8> src, int count) {
+    _ioPosition = _ioPosition.address == 0 ? calloc<Int64>() : _ioPosition;
+    _ioCount = _ioCount.address == 0 ? calloc<Uint32>() : _ioCount;
+    if (_win.setFilePointerEx(_handle, offset, _ioPosition, 0) == 0) {
+      _win.fail('SetFilePointerEx(write)', path);
+    }
+    final ok = _win.writeFile(_handle, src, count, _ioCount, nullptr);
+    final err = _win.getLastError();
+    if (ok == 0) {
+      throw WindowsException(
+        'WriteFile(offset=$offset,count=$count,ok=$ok,err=$err)',
+        err,
+        path,
+      );
+    }
+    return _ioCount.value;
   }
 
   @override
@@ -612,17 +796,26 @@ final class WindowsMmapFile extends MmapFile {
     final e = end ?? dst.length;
     RangeError.checkValidRange(start, e, dst.length);
     if (offset < 0) throw RangeError.value(offset, 'offset');
-    _size = _querySize();
-    if (offset >= _size) return 0;
-    final wanted = math.min(e - start, _size - offset);
+    final requested = e - start;
+    if (offset >= _size || offset + requested > _size) {
+      _size = _querySize();
+      if (offset >= _size) return 0;
+    }
+    final wanted = math.min(requested, _size - offset);
     if (wanted <= 0) return 0;
 
+    final cache = _ensureIoMap();
+    if (cache != null && offset + wanted <= cache.length) {
+      dst.setRange(start, start + wanted, cache.bytes, offset);
+      return wanted;
+    }
+
     if (direct) {
-      if (offset % _directAlignment != 0 ||
-          wanted % _directAlignment != 0) {
+      if (offset % _directAlignment != 0 || wanted % _directAlignment != 0) {
         throw ArgumentError(
-            'Direct I/O read requires 4 KiB aligned offset and length '
-            '(offset=$offset, length=$wanted).');
+          'Direct I/O read requires 4 KiB aligned offset and length '
+          '(offset=$offset, length=$wanted).',
+        );
       }
       var done = 0;
       while (done < wanted) {
@@ -630,8 +823,11 @@ final class WindowsMmapFile extends MmapFile {
         _ensureScratch(n);
         final got = _readChunk(offset + done, _scratch, n);
         if (got <= 0) break;
-        dst.setRange(start + done, start + done + got,
-            _scratch.asTypedList(got));
+        dst.setRange(
+          start + done,
+          start + done + got,
+          _scratch.asTypedList(got),
+        );
         done += got;
         if (got < n) break;
       }
@@ -661,11 +857,17 @@ final class WindowsMmapFile extends MmapFile {
     if (wanted == 0) return 0;
 
     if (direct &&
-        (offset % _directAlignment != 0 ||
-            wanted % _directAlignment != 0)) {
+        (offset % _directAlignment != 0 || wanted % _directAlignment != 0)) {
       throw ArgumentError(
-          'Direct I/O write requires 4 KiB aligned offset and length '
-          '(offset=$offset, length=$wanted).');
+        'Direct I/O write requires 4 KiB aligned offset and length '
+        '(offset=$offset, length=$wanted).',
+      );
+    }
+
+    final cache = _ensureIoMap();
+    if (cache != null && offset + wanted <= cache.length) {
+      cache.bytes.setRange(offset, offset + wanted, src, start);
+      return wanted;
     }
 
     var done = 0;
@@ -691,7 +893,15 @@ final class WindowsMmapFile extends MmapFile {
       // Marking sparse before extending avoids NTFS zero-filling the gap when
       // a later write lands far beyond EOF (measured: 19.1s -> 0ms for 32GiB).
       _win.deviceIoControl(
-          _handle, _fsctlSetSparse, nullptr, 0, nullptr, 0, nullptr, nullptr);
+        _handle,
+        _fsctlSetSparse,
+        nullptr,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        nullptr,
+      );
     }
     final newPos = calloc<Int64>();
     try {
@@ -710,6 +920,7 @@ final class WindowsMmapFile extends MmapFile {
   @override
   void flush() {
     _checkOpen();
+    _ioMapRegion?.flush();
     for (final region in _regions) {
       region.flush();
     }
@@ -789,7 +1000,8 @@ final class WindowsMmapFile extends MmapFile {
         destOffset % _cloneAlignment != 0 ||
         n % _cloneAlignment != 0) {
       throw ArgumentError(
-          'cloneRangeFrom requires 4 KiB aligned source, dest and length');
+        'cloneRangeFrom requires 4 KiB aligned source, dest and length',
+      );
     }
     _closeMapping();
     final data = calloc<_DuplicateExtentsData>();
@@ -829,11 +1041,13 @@ final class WindowsMmapFile extends MmapFile {
     _closed = true;
     _closeMapping();
     _freeScratch();
+    _freeIoScratch();
     _win.closeHandle(_handle);
   }
 
   @override
-  String toString() => 'WindowsMmapFile($path, size: $_size, '
+  String toString() =>
+      'WindowsMmapFile($path, size: $_size, '
       'readOnly: $readOnly)';
 }
 
@@ -860,8 +1074,7 @@ final class WindowsMmapPlaceholder implements MmapPlaceholder {
       throw ArgumentError.value(file, 'file', 'must be a WindowsMmapFile');
     }
     _current?.close();
-    final region =
-        file._mapIntoPlaceholder(_base, offset, _length, writable);
+    final region = file._mapIntoPlaceholder(_base, offset, _length, writable);
     _current = region;
     return region;
   }
@@ -892,10 +1105,17 @@ final class WindowsMappedRegion implements MappedRegion {
   final bool _view3;
   bool _closed = false;
 
-  WindowsMappedRegion._(this._owner, this._win, this._base, this._mapLength,
-      this._delta, this.offset, this.length, this._writable,
-      [this._view3 = false])
-      : _all = _base.asTypedList(_mapLength);
+  WindowsMappedRegion._(
+    this._owner,
+    this._win,
+    this._base,
+    this._mapLength,
+    this._delta,
+    this.offset,
+    this.length,
+    this._writable, [
+    this._view3 = false,
+  ]) : _all = _base.asTypedList(_mapLength);
 
   @override
   Uint8List get bytes {
@@ -913,7 +1133,11 @@ final class WindowsMappedRegion implements MappedRegion {
   void flush() {
     if (_closed || !_writable) return;
     if (_win.flushViewOfFile(_base, _mapLength) == 0) {
-      throw WindowsException('FlushViewOfFile', _win.getLastError(), _owner.path);
+      throw WindowsException(
+        'FlushViewOfFile',
+        _win.getLastError(),
+        _owner.path,
+      );
     }
   }
 
@@ -944,13 +1168,15 @@ final class WindowsMappedRegion implements MappedRegion {
     if (range.length == 0) return;
     final entry = calloc<_MemoryRangeEntry>();
     try {
-      entry.ref.virtualAddress =
-          (_base + _delta + range.offset).cast<Void>();
+      entry.ref.virtualAddress = (_base + _delta + range.offset).cast<Void>();
       entry.ref.numberOfBytes = range.length;
       final ok = _win.prefetchVirtualMemory(-1, 1, entry, 0);
       if (ok == 0) {
         throw WindowsException(
-            'PrefetchVirtualMemory', _win.getLastError(), _owner.path);
+          'PrefetchVirtualMemory',
+          _win.getLastError(),
+          _owner.path,
+        );
       }
     } finally {
       calloc.free(entry);

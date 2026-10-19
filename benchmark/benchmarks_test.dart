@@ -87,7 +87,10 @@ void bench(String name, dynamic Function() body) =>
 void main() {
   setUpAll(() async {
     _ensureFile();
-    _file = openMmapFileSync(_path, create: false);
+    _file = openMmapFileSync(_path, create: false, mmapCache: false);
+    // `file.*` rows must measure the syscall path, same as C's ReadFile/
+    // WriteFile. The explicit `_readRegion`/`_writeRegion` below measure mmap
+    // separately; do not let the transparent cache leak into the file rows.
     _readRegion = _file.map(offset: 0, length: _fileSize, writable: false);
     _writeRegion = _file.map(offset: 0, length: _fileSize);
     _readView = _readRegion.bytes;

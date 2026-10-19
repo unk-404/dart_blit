@@ -166,6 +166,7 @@ int main(int argc, char **argv) {
   file_handle file;
   unsigned char *seq = NULL;
   unsigned char *block = NULL;
+  unsigned char *scratch = NULL;
   uint64_t offset = 0;
   uint64_t state = 0x9E3779B97F4A7C15ULL;
   double start;
@@ -180,7 +181,8 @@ int main(int argc, char **argv) {
 
   seq = (unsigned char *)malloc((size_t)SEQ_BLOCK);
   block = (unsigned char *)malloc((size_t)BLOCK);
-  if (seq == NULL || block == NULL) {
+  scratch = (unsigned char *)malloc((size_t)SEQ_BLOCK);
+  if (seq == NULL || block == NULL || scratch == NULL) {
     fprintf(stderr, "malloc failed\n");
     return 1;
   }
@@ -201,9 +203,12 @@ int main(int argc, char **argv) {
   start = now_sec();
   offset = 0;
   for (i = 0; i < SEQ_OPS; i++) {
-    if (read_at(file, seq, (size_t)SEQ_BLOCK, offset) != (int)SEQ_BLOCK) {
+    if (read_at(file, scratch, (size_t)SEQ_BLOCK, offset) !=
+        (int)SEQ_BLOCK) {
       return fail("sequential read");
     }
+    /* Dart readAt copies native scratch into Uint8List; mirror that copy. */
+    memcpy(seq, scratch, (size_t)SEQ_BLOCK);
     offset = (offset + SEQ_BLOCK) % FILE_SIZE;
   }
   emit("file.read.8MiB", SEQ_OPS, now_sec() - start);
@@ -211,7 +216,10 @@ int main(int argc, char **argv) {
   start = now_sec();
   offset = 0;
   for (i = 0; i < SEQ_OPS; i++) {
-    if (write_at(file, seq, (size_t)SEQ_BLOCK, offset) != (int)SEQ_BLOCK) {
+    /* Dart writeAt copies Uint8List into native scratch before WriteFile. */
+    memcpy(scratch, seq, (size_t)SEQ_BLOCK);
+    if (write_at(file, scratch, (size_t)SEQ_BLOCK, offset) !=
+        (int)SEQ_BLOCK) {
       return fail("sequential write");
     }
     offset = (offset + SEQ_BLOCK) % FILE_SIZE;
@@ -220,16 +228,18 @@ int main(int argc, char **argv) {
 
   start = now_sec();
   for (i = 0; i < RANDOM_OPS; i++) {
-    if (read_at(file, block, (size_t)BLOCK, random_offset(&state)) !=
+    if (read_at(file, scratch, (size_t)BLOCK, random_offset(&state)) !=
         (int)BLOCK) {
       return fail("random read");
     }
+    memcpy(block, scratch, (size_t)BLOCK);
   }
   emit("file.read.random4K", RANDOM_OPS, now_sec() - start);
 
   start = now_sec();
   for (i = 0; i < RANDOM_OPS; i++) {
-    if (write_at(file, block, (size_t)BLOCK, random_offset(&state)) !=
+    memcpy(scratch, block, (size_t)BLOCK);
+    if (write_at(file, scratch, (size_t)BLOCK, random_offset(&state)) !=
         (int)BLOCK) {
       return fail("random write");
     }
@@ -283,6 +293,7 @@ int main(int argc, char **argv) {
 
   free(seq);
   free(block);
+  free(scratch);
   close_file(file);
   return 0;
 }

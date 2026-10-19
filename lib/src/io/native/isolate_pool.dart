@@ -97,15 +97,20 @@ final class ParallelBytesFile implements BytesFile {
     if (useIocp && direct) {
       throw ArgumentError('useIocp and direct are mutually exclusive');
     }
-    final workers = maxWorkers ??
+    final workers =
+        maxWorkers ??
         math.min(32, math.max(2, Platform.numberOfProcessors - 1));
     if (workers < 1) throw RangeError.value(workers, 'maxWorkers');
     if (mmapReadCacheLimit < 0) {
       throw RangeError.value(mmapReadCacheLimit, 'mmapReadCacheLimit');
     }
     if (maxQueue < 0) throw RangeError.value(maxQueue, 'maxQueue');
-    final coordinator =
-        openMmapFileSync(path, create: create, readOnly: readOnly);
+    final coordinator = openMmapFileSync(
+      path,
+      create: create,
+      readOnly: readOnly,
+      mmapCache: false,
+    );
     final pool = ParallelBytesFile._(
       path,
       readOnly,
@@ -132,8 +137,15 @@ final class ParallelBytesFile implements BytesFile {
       final done = Completer<void>();
       final isolate = await Isolate.spawn(
         _workerMain,
-        [readyPort.sendPort, _replies.sendPort, path, readOnly, useIocp,
-         direct, mmapReadCacheLimit],
+        [
+          readyPort.sendPort,
+          _replies.sendPort,
+          path,
+          readOnly,
+          useIocp,
+          direct,
+          mmapReadCacheLimit,
+        ],
         debugName: 'bytes-worker-$i',
         onExit: readyPort.sendPort,
         onError: readyPort.sendPort,
@@ -247,8 +259,7 @@ final class ParallelBytesFile implements BytesFile {
   }
 
   Future<void> _waitBarrierDrained(int watermark) {
-    if (_inflight.isEmpty &&
-        (_queue.isEmpty || _queue.first.id > watermark)) {
+    if (_inflight.isEmpty && (_queue.isEmpty || _queue.first.id > watermark)) {
       return Future<void>.value();
     }
     final completer = Completer<void>();
@@ -313,7 +324,12 @@ final class ParallelBytesFile implements BytesFile {
   }
 
   @override
-  Future<int> readAt(int offset, Uint8List dst, {int start = 0, int? end}) async {
+  Future<int> readAt(
+    int offset,
+    Uint8List dst, {
+    int start = 0,
+    int? end,
+  }) async {
     _checkOpen();
     final e = end ?? dst.length;
     RangeError.checkValidRange(start, e, dst.length);
@@ -360,8 +376,7 @@ final class ParallelBytesFile implements BytesFile {
     // Sort by offset, then merge exactly adjacent items into runs.  The
     // original indices are kept so the caller still gets the requested order.
     final entries = <({int offset, int index})>[
-      for (var i = 0; i < offsets.length; i++)
-        (offset: offsets[i], index: i),
+      for (var i = 0; i < offsets.length; i++) (offset: offsets[i], index: i),
     ]..sort((a, b) => a.offset.compareTo(b.offset));
     final runs = <_ReadRun>[];
     for (final entry in entries) {
@@ -383,11 +398,13 @@ final class ParallelBytesFile implements BytesFile {
       final end = math.min(start + batchSize, runs.length);
       final group = runs.sublist(start, end);
       groups.add(group);
-      futures.add(_submit('readRanges', {
-        'ranges': [
-          for (final run in group) [run.offset, run.count * length],
-        ],
-      }));
+      futures.add(
+        _submit('readRanges', {
+          'ranges': [
+            for (final run in group) [run.offset, run.count * length],
+          ],
+        }),
+      );
     }
     final payloads = await Future.wait(futures);
     for (var g = 0; g < payloads.length; g++) {
@@ -399,8 +416,11 @@ final class ParallelBytesFile implements BytesFile {
       for (final run in groups[g]) {
         for (var j = 0; j < run.count; j++) {
           final start = position + j * length;
-          results[run.indices[j]] =
-              Uint8List.sublistView(data, start, start + length);
+          results[run.indices[j]] = Uint8List.sublistView(
+            data,
+            start,
+            start + length,
+          );
         }
         position += run.count * length;
       }
@@ -433,11 +453,13 @@ final class ParallelBytesFile implements BytesFile {
         lengths.add(block.length);
         position += block.length;
       }
-      futures.add(_submit('writeBatch', {
-        'offsets': groupOffsets,
-        'lengths': lengths,
-        'data': TransferableTypedData.fromList([joined]),
-      }));
+      futures.add(
+        _submit('writeBatch', {
+          'offsets': groupOffsets,
+          'lengths': lengths,
+          'data': TransferableTypedData.fromList([joined]),
+        }),
+      );
     }
     final values = await Future.wait(futures);
     for (final value in values) {
@@ -447,17 +469,22 @@ final class ParallelBytesFile implements BytesFile {
   }
 
   @override
-  Future<int> writeAt(int offset, Uint8List src, {int start = 0, int? end}) async {
+  Future<int> writeAt(
+    int offset,
+    Uint8List src, {
+    int start = 0,
+    int? end,
+  }) async {
     _checkWritable();
     final e = end ?? src.length;
     RangeError.checkValidRange(start, e, src.length);
     if (offset < 0) throw RangeError.value(offset, 'offset');
     if (start == e) return 0;
     final copy = Uint8List.fromList(Uint8List.sublistView(src, start, e));
-    final payload = await _submit(
-      'write',
-      {'offset': offset, 'data': TransferableTypedData.fromList([copy])},
-    );
+    final payload = await _submit('write', {
+      'offset': offset,
+      'data': TransferableTypedData.fromList([copy]),
+    });
     return payload as int;
   }
 
@@ -549,7 +576,8 @@ final class ParallelBytesFile implements BytesFile {
   }
 
   @override
-  String toString() => 'ParallelBytesFile($path, workers: $maxWorkers, '
+  String toString() =>
+      'ParallelBytesFile($path, workers: $maxWorkers, '
       'pending: $pending, closed: $_closed)';
 }
 
@@ -613,6 +641,7 @@ void _workerMain(List<Object> args) {
         create: false,
         readOnly: readOnly,
         direct: direct,
+        mmapCache: false,
       );
       if (readOnly &&
           !direct &&
@@ -620,11 +649,7 @@ void _workerMain(List<Object> args) {
           mmap.length > 0 &&
           mmap.length <= mmapReadCacheLimit) {
         try {
-          readCache = mmap.map(
-            offset: 0,
-            length: mmap.length,
-            writable: false,
-          );
+          readCache = mmap.map(offset: 0, length: mmap.length, writable: false);
           readView = readCache.bytes;
         } catch (_) {
           // Mapping is an optimization; fall back to ReadFile/pread.
@@ -678,7 +703,10 @@ void _workerMain(List<Object> args) {
           final buf = Uint8List(length);
           final got = readInto(offset, buf, 0, length);
           final data = got == length ? buf : Uint8List.sublistView(buf, 0, got);
-          reply.send([id, TransferableTypedData.fromList([data])]);
+          reply.send([
+            id,
+            TransferableTypedData.fromList([data]),
+          ]);
         case 'write':
           final offset = message['offset'] as int;
           final transferred = message['data'] as TransferableTypedData;
@@ -699,7 +727,10 @@ void _workerMain(List<Object> args) {
             }
             if (inBounds) {
               final out = iocp.readManySync(offsets, length);
-              reply.send([id, TransferableTypedData.fromList([out])]);
+              reply.send([
+                id,
+                TransferableTypedData.fromList([out]),
+              ]);
               return;
             }
           }
@@ -711,12 +742,14 @@ void _workerMain(List<Object> args) {
               out.fillRange(start + got, start + length, 0);
             }
           }
-          reply.send([id, TransferableTypedData.fromList([out])]);
+          reply.send([
+            id,
+            TransferableTypedData.fromList([out]),
+          ]);
         case 'readRanges':
           final rawRanges = (message['ranges'] as List).cast<List>();
           final ranges = <List<int>>[
-            for (final range in rawRanges)
-              [range[0] as int, range[1] as int],
+            for (final range in rawRanges) [range[0] as int, range[1] as int],
           ];
           final total = ranges.fold<int>(0, (sum, range) => sum + range[1]);
           if (iocp != null) {
@@ -733,7 +766,10 @@ void _workerMain(List<Object> args) {
             if (ranges.isNotEmpty && sameLength && inBounds) {
               final offsets = [for (final range in ranges) range[0]];
               final out = iocp.readManySync(offsets, firstLength);
-              reply.send([id, TransferableTypedData.fromList([out])]);
+              reply.send([
+                id,
+                TransferableTypedData.fromList([out]),
+              ]);
               return;
             }
           }
@@ -747,7 +783,10 @@ void _workerMain(List<Object> args) {
             }
             position += length;
           }
-          reply.send([id, TransferableTypedData.fromList([out])]);
+          reply.send([
+            id,
+            TransferableTypedData.fromList([out]),
+          ]);
         case 'writeBatch':
           final offsets = (message['offsets'] as List).cast<int>();
           final lengths = (message['lengths'] as List).cast<int>();
@@ -782,8 +821,13 @@ void _workerMain(List<Object> args) {
           if (iocp != null) {
             final blocks = <Uint8List>[];
             for (var j = 0; j < runOffsets.length; j++) {
-              blocks.add(Uint8List.sublistView(
-                  data, runStarts[j], runStarts[j] + runLengths[j]));
+              blocks.add(
+                Uint8List.sublistView(
+                  data,
+                  runStarts[j],
+                  runStarts[j] + runLengths[j],
+                ),
+              );
             }
             final total = iocp.writeManySync(runOffsets, blocks);
             reply.send([id, total]);
@@ -792,7 +836,11 @@ void _workerMain(List<Object> args) {
           var total = 0;
           for (var j = 0; j < runOffsets.length; j++) {
             total += writeFrom(
-                runOffsets[j], data, runStarts[j], runStarts[j] + runLengths[j]);
+              runOffsets[j],
+              data,
+              runStarts[j],
+              runStarts[j] + runLengths[j],
+            );
           }
           reply.send([id, total]);
         default:
