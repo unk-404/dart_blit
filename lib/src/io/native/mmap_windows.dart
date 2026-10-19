@@ -67,6 +67,14 @@ typedef _CloseHandle = int Function(int);
 typedef _Memset_C = Pointer<Void> Function(Pointer<Void>, Int32, Size);
 typedef _Memset = Pointer<Void> Function(Pointer<Void>, int, int);
 
+typedef _VirtualAlloc_C = Pointer<Uint8> Function(
+    Pointer<Void>, Size, Uint32, Uint32);
+typedef _VirtualAlloc = Pointer<Uint8> Function(
+    Pointer<Void>, int, int, int);
+
+typedef _VirtualFree_C = Int32 Function(Pointer<Void>, Size, Uint32);
+typedef _VirtualFree = int Function(Pointer<Void>, int, int);
+
 const int _genericRead = 0x80000000;
 const int _genericWrite = 0x40000000;
 const int _fileShareAll = 0x00000007;
@@ -80,6 +88,12 @@ const int _fileMapWrite = 0x0002;
 const int _invalidHandle = -1;
 const int _errorHandleEof = 38;
 const int _fsctlSetSparse = 0x000900C4;
+const int _fileFlagNoBuffering = 0x20000000;
+const int _memCommit = 0x00001000;
+const int _memReserve = 0x00002000;
+const int _memRelease = 0x00008000;
+const int _directAlignment = 4096;
+const int _maxDirectChunk = 8 << 20;
 const int _mapAlignment = 64 * 1024;
 const int _maxIoChunk = 1 << 30; // 1 GiB; ReadFile/WriteFile take a DWORD
 
@@ -136,6 +150,11 @@ class _Win32 {
   late final _Memset memset =
       _crt.lookupFunction<_Memset_C, _Memset>('memset');
 
+  late final _VirtualAlloc virtualAlloc =
+      _k32.lookupFunction<_VirtualAlloc_C, _VirtualAlloc>('VirtualAlloc');
+  late final _VirtualFree virtualFree =
+      _k32.lookupFunction<_VirtualFree_C, _VirtualFree>('VirtualFree');
+
   _Win32() {
     // Warm up every lazy lookupFunction once, before any operation whose
     // GetLastError we care about.  Otherwise the first lookup can reset the
@@ -155,6 +174,8 @@ class _Win32 {
     getLastError;
     closeHandle;
     memset;
+    virtualAlloc;
+    virtualFree;
   }
 
   Never fail(String op, String path) =>
@@ -176,15 +197,17 @@ final class WindowsMmapFile extends MmapFile {
   final String path;
   @override
   final bool readOnly;
+  final bool direct;
 
-  WindowsMmapFile._(this._win, this._handle, this.path, this.readOnly);
+  WindowsMmapFile._(
+      this._win, this._handle, this.path, this.readOnly, this.direct);
 
   static Future<MmapFile> open(String path,
-          {bool create = true, bool readOnly = false}) async =>
-      openSync(path, create: create, readOnly: readOnly);
+          {bool create = true, bool readOnly = false, bool direct = false}) async =>
+      openSync(path, create: create, readOnly: readOnly, direct: direct);
 
   static MmapFile openSync(String path,
-      {bool create = true, bool readOnly = false}) {
+      {bool create = true, bool readOnly = false, bool direct = false}) {
     final win = _Win32();
     final p = path.toNativeUtf16();
     final int handle;
@@ -195,7 +218,7 @@ final class WindowsMmapFile extends MmapFile {
         _fileShareAll,
         nullptr,
         create ? _openAlways : _openExisting,
-        _fileAttributeNormal,
+        _fileAttributeNormal | (direct ? _fileFlagNoBuffering : 0),
         0,
       );
     } finally {
@@ -204,7 +227,7 @@ final class WindowsMmapFile extends MmapFile {
     if (handle == _invalidHandle) {
       throw WindowsException('CreateFileW', win.getLastError(), path);
     }
-    final file = WindowsMmapFile._(win, handle, path, readOnly);
+    final file = WindowsMmapFile._(win, handle, path, readOnly, direct);
     file._size = file._querySize();
     return file;
   }
@@ -259,6 +282,10 @@ final class WindowsMmapFile extends MmapFile {
   @override
   MappedRegion map({int offset = 0, int? length, bool writable = true}) {
     _checkOpen();
+    if (direct) {
+      throw UnsupportedError(
+          'Direct I/O files cannot be memory-mapped; use readAt/writeAt.');
+    }
     if (writable && readOnly) {
       throw StateError('Cannot create a writable mapping for $path');
     }
@@ -309,13 +336,31 @@ final class WindowsMmapFile extends MmapFile {
 
   void _ensureScratch(int needed) {
     if (needed <= _scratchCapacity) return;
-    if (_scratch.address != 0) calloc.free(_scratch);
+    _freeScratch();
     var capacity = _scratchCapacity == 0 ? 1 << 20 : _scratchCapacity;
     while (capacity < needed) {
       capacity *= 2;
     }
-    _scratch = calloc<Uint8>(capacity);
+    _scratch = direct
+        ? _win.virtualAlloc(
+            nullptr, capacity, _memCommit | _memReserve, _pageReadWrite)
+        : calloc<Uint8>(capacity);
+    if (_scratch.address == 0) {
+      throw WindowsException(
+          direct ? 'VirtualAlloc' : 'calloc', -1, path);
+    }
     _scratchCapacity = capacity;
+  }
+
+  void _freeScratch() {
+    if (_scratch.address == 0) return;
+    if (direct) {
+      _win.virtualFree(_scratch.cast(), 0, _memRelease);
+    } else {
+      calloc.free(_scratch);
+    }
+    _scratch = nullptr;
+    _scratchCapacity = 0;
   }
 
   int _readChunk(int offset, Pointer<Uint8> dst, int count) {
@@ -374,6 +419,27 @@ final class WindowsMmapFile extends MmapFile {
     final wanted = math.min(e - start, _size - offset);
     if (wanted <= 0) return 0;
 
+    if (direct) {
+      if (offset % _directAlignment != 0 ||
+          wanted % _directAlignment != 0) {
+        throw ArgumentError(
+            'Direct I/O read requires 4 KiB aligned offset and length '
+            '(offset=$offset, length=$wanted).');
+      }
+      var done = 0;
+      while (done < wanted) {
+        final n = math.min(wanted - done, _maxDirectChunk);
+        _ensureScratch(n);
+        final got = _readChunk(offset + done, _scratch, n);
+        if (got <= 0) break;
+        dst.setRange(start + done, start + done + got,
+            _scratch.asTypedList(got));
+        done += got;
+        if (got < n) break;
+      }
+      return done;
+    }
+
     var done = 0;
     while (done < wanted) {
       final n = math.min(wanted - done, _maxIoChunk);
@@ -396,9 +462,18 @@ final class WindowsMmapFile extends MmapFile {
     final wanted = e - start;
     if (wanted == 0) return 0;
 
+    if (direct &&
+        (offset % _directAlignment != 0 ||
+            wanted % _directAlignment != 0)) {
+      throw ArgumentError(
+          'Direct I/O write requires 4 KiB aligned offset and length '
+          '(offset=$offset, length=$wanted).');
+    }
+
     var done = 0;
     while (done < wanted) {
-      final n = math.min(wanted - done, _maxIoChunk);
+      final maxChunk = direct ? _maxDirectChunk : _maxIoChunk;
+      final n = math.min(wanted - done, maxChunk);
       _ensureScratch(n);
       _scratch.asTypedList(n).setRange(0, n, src, start + done);
       final put = _writeChunk(offset + done, _scratch, n);
@@ -467,11 +542,7 @@ final class WindowsMmapFile extends MmapFile {
     if (_closed) return;
     _closed = true;
     _closeMapping();
-    if (_scratch.address != 0) {
-      calloc.free(_scratch);
-      _scratch = nullptr;
-      _scratchCapacity = 0;
-    }
+    _freeScratch();
     _win.closeHandle(_handle);
   }
 

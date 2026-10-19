@@ -15,9 +15,14 @@ First development release.
 - Native mmap engine: Windows `CreateFileMappingW`, POSIX `mmap`/`pread`;
   sparse files, zero-copy windows, zeroize, read-only mappings.
 - Windows `IocpFile`: overlapped I/O + IOCP, QD 1–128 batch reads/writes.
-- `ParallelBytesFile`: isolate worker pool, automatic FIFO dispatch, batch 32,
-  `readMany`/`writeMany`, watermark barriers, adjacent-range coalescing, and a
-  read-only full-file mmap cache for hot files (default limit 1 GiB).
+- Windows direct I/O: `openMmapFileSync(..., direct: true)` /
+  `ParallelBytesFile.open(..., direct: true)` via `FILE_FLAG_NO_BUFFERING`,
+  `VirtualAlloc`-aligned scratch buffers, and 4 KiB-aligned streaming
+  reads/writes.
+- `ParallelBytesFile`: isolate worker pool (default up to 32), automatic FIFO
+  dispatch, batch 32, `readMany`/`writeMany`, watermark barriers,
+  adjacent-range coalescing, and a read-only full-file mmap cache for hot files
+  (default limit 1 GiB).
 - Web OPFS backend: chunk files, double-slot manifest, CRC-32, dedicated
   worker, capability/quota probing.
 - Benchmark suite (`benchmark_test`, JIT/AOT + JSONL), a generated

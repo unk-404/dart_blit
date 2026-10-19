@@ -34,6 +34,7 @@ final class ParallelBytesFile implements BytesFile {
   final bool readOnly;
   final int maxWorkers;
   final bool useIocp;
+  final bool direct;
   final int mmapReadCacheLimit;
   final MmapFile _coordinator;
   final ReceivePort _replies = ReceivePort();
@@ -53,6 +54,7 @@ final class ParallelBytesFile implements BytesFile {
     this.readOnly,
     this.maxWorkers,
     this.useIocp,
+    this.direct,
     this.mmapReadCacheLimit,
     this._coordinator,
   ) {
@@ -61,9 +63,12 @@ final class ParallelBytesFile implements BytesFile {
 
   /// Opens [path] and spawns up to [maxWorkers] worker isolates.
   ///
-  /// Default concurrency is `min(16, max(2, cpus - 1))`; one worker per queued
-  /// request is not useful because each request already has a synchronous FFI
-  /// call, but 8–16 workers saturate a consumer NVMe at QD8–QD16.
+  /// Default concurrency is `min(32, max(2, cpus - 1))`; each worker is
+  /// synchronous, so more workers are how a caller gets more outstanding I/O.
+  /// The 32 cap keeps isolate/mmap overhead bounded on very large machines.
+  ///
+  /// [direct] uses `FILE_FLAG_NO_BUFFERING` in every worker (Windows) with
+  /// 4 KiB-aligned requests; use it for aligned streaming, not random access.
   ///
   /// With [readOnly] and a file no larger than [mmapReadCacheLimit], each
   /// worker maps the whole file read-only once and serves reads from the map
@@ -76,20 +81,29 @@ final class ParallelBytesFile implements BytesFile {
     bool readOnly = false,
     int? maxWorkers,
     bool useIocp = false,
+    bool direct = false,
     int mmapReadCacheLimit = 1 << 30,
   }) async {
+    if (useIocp && direct) {
+      throw ArgumentError('useIocp and direct are mutually exclusive');
+    }
+    if (direct && !Platform.isWindows) {
+      throw UnsupportedError('Direct I/O is not implemented on this platform.');
+    }
     final workers = maxWorkers ??
-        math.min(16, math.max(2, Platform.numberOfProcessors - 1));
+        math.min(32, math.max(2, Platform.numberOfProcessors - 1));
     if (workers < 1) throw RangeError.value(workers, 'maxWorkers');
     if (mmapReadCacheLimit < 0) {
       throw RangeError.value(mmapReadCacheLimit, 'mmapReadCacheLimit');
     }
-    final coordinator = openMmapFileSync(path, create: create, readOnly: readOnly);
+    final coordinator =
+        openMmapFileSync(path, create: create, readOnly: readOnly);
     final pool = ParallelBytesFile._(
       path,
       readOnly,
       workers,
       useIocp,
+      direct,
       mmapReadCacheLimit,
       coordinator,
     );
@@ -110,7 +124,7 @@ final class ParallelBytesFile implements BytesFile {
       final isolate = await Isolate.spawn(
         _workerMain,
         [readyPort.sendPort, _replies.sendPort, path, readOnly, useIocp,
-         mmapReadCacheLimit],
+         direct, mmapReadCacheLimit],
         debugName: 'bytes-worker-$i',
         onExit: readyPort.sendPort,
         onError: readyPort.sendPort,
@@ -540,7 +554,8 @@ void _workerMain(List<Object> args) {
   final path = args[2] as String;
   final readOnly = args[3] as bool;
   final useIocp = args[4] as bool;
-  final mmapReadCacheLimit = args[5] as int;
+  final direct = args[5] as bool;
+  final mmapReadCacheLimit = args[6] as int;
   final commands = ReceivePort();
   IocpFile? iocp;
   MmapFile? mmap;
@@ -555,8 +570,14 @@ void _workerMain(List<Object> args) {
         queueDepth: ParallelBytesFile.batchSize,
       );
     } else {
-      mmap = openMmapFileSync(path, create: false, readOnly: readOnly);
+      mmap = openMmapFileSync(
+        path,
+        create: false,
+        readOnly: readOnly,
+        direct: direct,
+      );
       if (readOnly &&
+          !direct &&
           mmapReadCacheLimit > 0 &&
           mmap.length > 0 &&
           mmap.length <= mmapReadCacheLimit) {

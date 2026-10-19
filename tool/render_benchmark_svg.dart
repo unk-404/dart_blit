@@ -40,7 +40,7 @@ final class _Glyph {
 }
 
 /// Text rendered as outlines, so GitHub's SVG sanitizer cannot drop a custom
-/// font. The source font is ZCOOL KuaiLe (SIL OFL 1.1); see assets/fonts/.
+/// font. The source font is Rounded Mplus 1c (SIL OFL 1.1); see assets/fonts/.
 final class _SvgFont {
   final int unitsPerEm;
   final Map<String, _Glyph> glyphs;

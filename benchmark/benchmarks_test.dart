@@ -79,6 +79,11 @@ void _ensureFile() {
   f.close();
 }
 
+const _benchTimeout = Timeout(Duration(minutes: 2));
+
+void bench(String name, dynamic Function() body) =>
+    benchmark(name, body, timeout: _benchTimeout);
+
 void main() {
   setUpAll(() async {
     _ensureFile();
@@ -105,27 +110,27 @@ void main() {
   final mut = BytesMut(4096);
   var byteIndex = 0;
 
-  benchmark('core.Bytes.slice x1024', () {
+  bench('core.Bytes.slice x1024', () {
     for (var i = 0; i < 1024; i++) {
       final start = (byteIndex++ * 7) & 0xFFFF;
       _sink ^= bytes.slice(start, start + 333)[0];
     }
   });
 
-  benchmark('core.Bytes.getUint32 x4096', () {
+  bench('core.Bytes.getUint32 x4096', () {
     for (var i = 0; i < 4096; i++) {
       _sink ^= bytes.getUint32((byteIndex++ * 4) & 0xFFFFF);
     }
   });
 
-  benchmark('core.Bytes.copyTo.4KiB x64', () {
+  bench('core.Bytes.copyTo.4KiB x64', () {
     for (var i = 0; i < 64; i++) {
       bytes.slice(0, 4096).copyTo(_randBuf);
       _sink ^= _randBuf[4095];
     }
   });
 
-  benchmark('core.BytesMut.putUint32x64', () {
+  bench('core.BytesMut.putUint32x64', () {
     mut.clear();
     for (var i = 0; i < 64; i++) {
       mut.putUint32(i);
@@ -135,17 +140,17 @@ void main() {
 
   const ua = Uint64(0x12345678, 0x9ABCDEF0);
   const ub = Uint64(0x0FEDCBA9, 0x87654321);
-  benchmark('core.Uint64.add x1024', () {
+  bench('core.Uint64.add x1024', () {
     for (var i = 0; i < 1024; i++) {
       _sink ^= (ua + ub).lo & 0xFF;
     }
   });
-  benchmark('core.Uint64.compare x1024', () {
+  bench('core.Uint64.compare x1024', () {
     for (var i = 0; i < 1024; i++) {
       _sink ^= ua.compareTo(ub) & 0xFF;
     }
   });
-  benchmark('core.Uint64.mul x1024', () {
+  bench('core.Uint64.mul x1024', () {
     for (var i = 0; i < 1024; i++) {
       _sink ^= (ua * ub).lo & 0xFF;
     }
@@ -153,7 +158,7 @@ void main() {
 
   final bigA = BigInt.parse('1234567890123456789012345678901234567890');
   final bigB = BigInt.parse('987654321098765432109876543210987654321');
-  benchmark('core.BigInt.add x1024', () {
+  bench('core.BigInt.add x1024', () {
     for (var i = 0; i < 1024; i++) {
       _sink ^= (bigA + bigB).toInt() & 0xFF;
     }
@@ -162,34 +167,34 @@ void main() {
   // -------------------------------------------------------------------------
   // File I/O, 1 GiB.
   // -------------------------------------------------------------------------
-  benchmark('file.read.8MiB', () {
+  bench('file.read.8MiB', () {
     _file.readAt(_seqOffset, _seqBuf);
     _seqOffset = (_seqOffset + _seqBlock) % _fileSize;
     _sink ^= _seqBuf[0];
   });
 
-  benchmark('file.write.8MiB', () {
+  bench('file.write.8MiB', () {
     _file.writeAt(_seqOffset, _seqBuf);
     _seqOffset = (_seqOffset + _seqBlock) % _fileSize;
     _sink ^= _seqBuf[0];
   });
 
-  benchmark('file.read.random4K', () {
+  bench('file.read.random4K', () {
     _file.readAt(_randomOffset(), _randBuf);
     _sink ^= _randBuf[0];
   });
 
-  benchmark('file.write.random4K', () {
+  bench('file.write.random4K', () {
     _file.writeAt(_randomOffset(), _randBuf);
     _sink ^= _randBuf[0];
   });
 
-  benchmark('mmap.read.random4K', () {
+  bench('mmap.read.random4K', () {
     _randBuf.setRange(0, _block, _readView, _randomOffset());
     _sink ^= _randBuf[0];
   });
 
-  benchmark('mmap.write.random4K', () {
+  bench('mmap.write.random4K', () {
     final off = _randomOffset();
     _writeView.setRange(off, off + _block, _randBuf);
     _sink ^= _randBuf[0];
@@ -216,7 +221,7 @@ void main() {
         await pool.close();
       });
 
-      benchmark('pool.read.random4K.w$workers', () async {
+      bench('pool.read.random4K.w$workers', () async {
         final offsets = [
           for (var i = 0; i < workers * ParallelBytesFile.batchSize; i++)
             _randomOffset(),
@@ -230,7 +235,7 @@ void main() {
       if (workers == 4) {
         // Sequential readMany: coalescing turns every 32 adjacent 4K reads
         // into a single larger read.  The measured unit is one batch.
-        benchmark('pool.read.sequential4K.w4', () async {
+        bench('pool.read.sequential4K.w4', () async {
           final base =
               (_ioIndex++ * 4096 * 32) % (_fileSize - 4096 * 32);
           final offsets = [

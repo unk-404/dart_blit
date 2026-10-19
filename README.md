@@ -15,7 +15,7 @@ Web I/O uses OPFS chunk files and a dedicated worker.
 - **`BytesFile`**: async random-access interface; native `dart:io` backend plus sync API.
 - **Native mmap engine** (`package:blit/bytes_ffi.dart`): `CreateFileMappingW`/`MapViewOfFile` on Windows, `mmap`/`pread`/`pwrite` on POSIX; sparse files, 64 KiB windows, zeroize.
 - **Windows IOCP engine** `IocpFile`: overlapped I/O + completion port, QD 1–128 for a single worker.
-- **`ParallelBytesFile`**: native isolate worker pool + FIFO queue + watermark barriers; batch 32; `readMany`/`writeMany`.
+- **`ParallelBytesFile`**: native isolate worker pool + FIFO queue + watermark barriers; batch 32; `readMany`/`writeMany`; default `min(32, max(2, cpus-1))` workers; read-only mmap cache for hot files up to 1 GiB.
 - **Web OPFS backend**: chunk files + double-slot manifest + dedicated worker; 32 GiB logical files are metadata-only until written.
 - **Hand-written Web bindings**: only `dart:js_interop` declarations for `Worker`, `Blob`, `URL` and `navigator.storage`; no `package:web` dependency.
 
@@ -120,6 +120,23 @@ skip the per-block `ReadFile`/`pread`. Set the limit to `0` to disable, or raise
 it for a hot file that fits comfortably in the address space. Mapping is
 virtual: cold pages still fault from disk.
 
+For streaming files larger than RAM, open with `direct: true` (Windows,
+`FILE_FLAG_NO_BUFFERING`). Offsets and lengths must be 4 KiB aligned; direct
+I/O bypasses the page cache and is intended for sequential copy/import/export,
+not 4 KiB random access:
+
+```dart
+final stream = openMmapFileSync('/tmp/big.bin', direct: true);
+final chunk = Uint8List(8 << 20); // 4 KiB aligned length
+stream.readAt(0, chunk);
+stream.writeAt(0, chunk);
+stream.close();
+```
+
+`ParallelBytesFile.open(..., direct: true)` uses the same direct engine in its
+workers. On 4K random reads direct I/O is much slower than buffered/mmap
+(measured ~7k vs ~175k IOPS on 8 GiB); use it only for aligned streaming.
+
 `IocpFile` (Windows) is available for a single worker that wants deeper queue:
 
 ```dart
@@ -153,6 +170,8 @@ Local Windows x64, UMIS NVMe SSD, 32 logical CPUs, 16.6 GB RAM, Dart 3.13.5:
 |---|---:|
 | Sequential read 1 GiB (8 MiB blocks, cached) | 7.71 GiB/s |
 | Sequential write 1 GiB (8 MiB blocks, cached) | 4.55 GiB/s |
+| Direct streaming write 1 GiB (`NO_BUFFERING`) | 1.9 GiB/s |
+| Direct streaming read 1 GiB (`NO_BUFFERING`) | 2.7 GiB/s |
 | 32 GiB 4K random pread | 7.35k IOPS / 28.7 MiB/s |
 | 32 GiB 4K random pwrite | 95.6k IOPS / 373 MiB/s (buffered) |
 | 32 GiB 4K random mmap read (cold) | 5.0k IOPS / 19.5 MiB/s |
