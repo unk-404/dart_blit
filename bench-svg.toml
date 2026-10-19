@@ -6,7 +6,7 @@ subtitle = "{os|local} · Dart vs C · {commit:short|local}"
 footer = "Generated from {rows} rows"
 width = 920
 min_height = 0
-max_rows = 6
+max_rows = 15
 only_matched = true
 kaomoji = "(◕‿◕)♡"
 
@@ -67,3 +67,51 @@ label = "mmap write"
 note = "4 KiB random · 1 GiB mapping"
 unit = "IOPS"
 group = "mmap"
+
+# Dart-only engines: C has no equivalent implementation, so these rows render
+# with the Dart bar only.
+[[row]]
+match = 'pool\.read\.random4K\.w(\d+)$'
+label = "Pool read · $1 workers"
+note = "Dart isolate pool · 4 KiB · batch 32"
+unit = "IOPS"
+value = "value * $1 * 32"
+group = "Dart pool"
+
+[[row]]
+match = 'pool\.read\.sequential4K\.w(\d+)$'
+label = "Pool sequential"
+note = "Dart isolate pool · 4 KiB · coalesced"
+unit = "IOPS"
+value = "value * 32"
+group = "Dart pool"
+
+[[row]]
+match = 'random(\d+)g\.pread\.read\.random4K$'
+label = "Large random pread"
+note = "Dart · 4 KiB · $1 GiB file"
+unit = "IOPS"
+group = "Dart large file"
+
+[[row]]
+match = 'random(\d+)g\.pwrite\.write\.random4K$'
+label = "Large random pwrite"
+note = "Dart · 4 KiB · $1 GiB file · buffered"
+unit = "IOPS"
+group = "Dart large file"
+
+[[row]]
+id = "iocp.read.random4K.qd32"
+label = "IOCP read · QD32"
+note = "Dart · Windows · single worker"
+unit = "IOPS"
+value = "value * 32"
+group = "Dart IOCP"
+
+[[row]]
+id = "iocp.write.random4K.qd32"
+label = "IOCP write · QD32"
+note = "Dart · Windows · single worker · buffered"
+unit = "IOPS"
+value = "value * 32"
+group = "Dart IOCP"

@@ -242,8 +242,8 @@ avoids it. OPFS uses chunk files for the same reason.
 The benchmark card above compares Dart with the C counterpart in
 [`benchmark/c/blit_bench.c`](benchmark/c/blit_bench.c). Both implement the same
 six single-thread operations: 8 MiB sequential read/write, 4 KiB random
-pread/pwrite, and 4 KiB random mmap read/write. Pool, IOCP and io_uring numbers
-are Dart-engine-specific and stay out of the C series.
+pread/pwrite, and 4 KiB random mmap read/write. Dart-only pool, large-file and
+IOCP rows are kept as single-series rows; they have no C counterpart by design.
 
 The card is generated from the `benchmark/` suite with
 [`bench-svg`](https://github.com/unk-404/benchmark_svg). Raw JSONL/SVG artifacts
