@@ -286,8 +286,10 @@ final class ParallelBytesFile implements BytesFile {
   /// Reads many independent ranges concurrently.
   ///
   /// Requests are grouped into batches of [batchSize] so one worker can use a
-  /// deep I/O queue and one transfer covers many small reads.  Results are in
-  /// the same order as [offsets].
+  /// deep I/O queue and one transfer covers many small reads.  Exactly adjacent
+  /// ranges are coalesced into one larger read before batching, which removes
+  /// most syscalls for sequential/scan workloads.  Results are in the same
+  /// order as [offsets]; ranges past EOF are zero-filled.
   Future<List<Uint8List>> readMany(List<int> offsets, int length) async {
     _checkOpen();
     if (length < 0) throw RangeError.value(length, 'length');
@@ -295,14 +297,38 @@ final class ParallelBytesFile implements BytesFile {
     if (length == 0) {
       return List<Uint8List>.generate(offsets.length, (_) => Uint8List(0));
     }
-    final out = <Uint8List>[];
+
+    // Sort by offset, then merge exactly adjacent items into runs.  The
+    // original indices are kept so the caller still gets the requested order.
+    final entries = <({int offset, int index})>[
+      for (var i = 0; i < offsets.length; i++)
+        (offset: offsets[i], index: i),
+    ]..sort((a, b) => a.offset.compareTo(b.offset));
+    final runs = <_ReadRun>[];
+    for (final entry in entries) {
+      if (runs.isNotEmpty) {
+        final last = runs.last;
+        if (entry.offset == last.offset + last.count * length) {
+          last.count++;
+          last.indices.add(entry.index);
+          continue;
+        }
+      }
+      runs.add(_ReadRun(entry.offset, [entry.index]));
+    }
+
+    final results = List<Uint8List?>.filled(offsets.length, null);
     final futures = <Future<Object?>>[];
-    final groups = <List<int>>[];
-    for (var start = 0; start < offsets.length; start += batchSize) {
-      final end = math.min(start + batchSize, offsets.length);
-      final group = offsets.sublist(start, end);
+    final groups = <List<_ReadRun>>[];
+    for (var start = 0; start < runs.length; start += batchSize) {
+      final end = math.min(start + batchSize, runs.length);
+      final group = runs.sublist(start, end);
       groups.add(group);
-      futures.add(_submit('readBatch', {'offsets': group, 'length': length}));
+      futures.add(_submit('readRanges', {
+        'ranges': [
+          for (final run in group) [run.offset, run.count * length],
+        ],
+      }));
     }
     final payloads = await Future.wait(futures);
     for (var g = 0; g < payloads.length; g++) {
@@ -310,15 +336,17 @@ final class ParallelBytesFile implements BytesFile {
       final data = payload is TransferableTypedData
           ? Uint8List.view(payload.materialize())
           : payload as Uint8List;
-      for (var i = 0; i < groups[g].length; i++) {
-        out.add(Uint8List.sublistView(
-          data,
-          i * length,
-          (i + 1) * length,
-        ));
+      var position = 0;
+      for (final run in groups[g]) {
+        for (var j = 0; j < run.count; j++) {
+          final start = position + j * length;
+          results[run.indices[j]] =
+              Uint8List.sublistView(data, start, start + length);
+        }
+        position += run.count * length;
       }
     }
-    return out;
+    return results.cast<Uint8List>();
   }
 
   /// Writes many independent ranges concurrently (variable block lengths).
@@ -470,6 +498,14 @@ final class _Worker {
   _Worker(this.index, this.isolate, this.readyPort);
 }
 
+final class _ReadRun {
+  final int offset;
+  int count;
+  final List<int> indices;
+
+  _ReadRun(this.offset, this.indices) : count = indices.length;
+}
+
 final class _Job {
   final int id;
   final String op;
@@ -575,30 +611,87 @@ void _workerMain(List<Object> args) {
             }
           }
           reply.send([id, TransferableTypedData.fromList([out])]);
+        case 'readRanges':
+          final rawRanges = (message['ranges'] as List).cast<List>();
+          final ranges = <List<int>>[
+            for (final range in rawRanges)
+              [range[0] as int, range[1] as int],
+          ];
+          final total = ranges.fold<int>(0, (sum, range) => sum + range[1]);
+          if (iocp != null) {
+            final firstLength = ranges.isEmpty ? 0 : ranges.first[1];
+            var sameLength = true;
+            var inBounds = true;
+            final fileLength = iocp.length;
+            for (final range in ranges) {
+              if (range[1] != firstLength) sameLength = false;
+              if (range[0] < 0 || range[0] + range[1] > fileLength) {
+                inBounds = false;
+              }
+            }
+            if (ranges.isNotEmpty && sameLength && inBounds) {
+              final offsets = [for (final range in ranges) range[0]];
+              final out = iocp.readManySync(offsets, firstLength);
+              reply.send([id, TransferableTypedData.fromList([out])]);
+              return;
+            }
+          }
+          final out = Uint8List(total);
+          var position = 0;
+          for (final range in ranges) {
+            final length = range[1];
+            final got = readInto(range[0], out, position, position + length);
+            if (got < length) {
+              out.fillRange(position + got, position + length, 0);
+            }
+            position += length;
+          }
+          reply.send([id, TransferableTypedData.fromList([out])]);
         case 'writeBatch':
           final offsets = (message['offsets'] as List).cast<int>();
           final lengths = (message['lengths'] as List).cast<int>();
           final transferred = message['data'] as TransferableTypedData;
           final data = Uint8List.view(transferred.materialize());
+
+          // Coalesce exactly adjacent blocks into one write: sequential
+          // writeMany patterns then issue one syscall per run instead of one
+          // per 4K block.
+          final runOffsets = <int>[];
+          final runStarts = <int>[];
+          final runLengths = <int>[];
+          var sourcePosition = 0;
+          var i = 0;
+          while (i < offsets.length) {
+            final runOffset = offsets[i];
+            final runStart = sourcePosition;
+            var runLength = lengths[i];
+            sourcePosition += lengths[i];
+            while (i + 1 < offsets.length &&
+                offsets[i + 1] == offsets[i] + lengths[i]) {
+              i++;
+              runLength += lengths[i];
+              sourcePosition += lengths[i];
+            }
+            runOffsets.add(runOffset);
+            runStarts.add(runStart);
+            runLengths.add(runLength);
+            i++;
+          }
+
           if (iocp != null) {
             final blocks = <Uint8List>[];
-            var position = 0;
-            for (final length in lengths) {
+            for (var j = 0; j < runOffsets.length; j++) {
               blocks.add(Uint8List.sublistView(
-                  data, position, position + length));
-              position += length;
+                  data, runStarts[j], runStarts[j] + runLengths[j]));
             }
-            final total = iocp.writeManySync(offsets, blocks);
+            final total = iocp.writeManySync(runOffsets, blocks);
             reply.send([id, total]);
             return;
           }
           var total = 0;
-          var position = 0;
-          for (var i = 0; i < offsets.length; i++) {
-            final length = lengths[i];
+          for (var j = 0; j < runOffsets.length; j++) {
             total += writeFrom(
-                offsets[i], data, position, position + length);
-            position += length;
+                runOffsets[j], data, runStarts[j], runStarts[j] + runLengths[j]);
           }
           reply.send([id, total]);
         default:

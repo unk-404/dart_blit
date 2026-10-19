@@ -85,6 +85,26 @@ void main() {
     await pool.close();
   });
 
+  test('readMany coalesces adjacent ranges and preserves order', () async {
+    final pool = await ParallelBytesFile.open(path, maxWorkers: 4);
+    await pool.truncate(0);
+    final blocks = [
+      for (var i = 0; i < 64; i++)
+        Uint8List(4096)..fillRange(0, 4096, i),
+    ];
+    final offsets = [for (var i = 0; i < 64; i++) i * 4096];
+    expect(await pool.writeMany(offsets, blocks), 64 * 4096);
+
+    // Deliberately unsorted: merging sorts internally, but results must map
+    // back to the caller's requested order.
+    final requested = [for (var i = 0; i < 64; i++) ((i * 17) % 64) * 4096];
+    final reads = await pool.readMany(requested, 4096);
+    for (var i = 0; i < requested.length; i++) {
+      expect(reads[i], blocks[requested[i] ~/ 4096]);
+    }
+    await pool.close();
+  });
+
   test('barrier drains jobs queued before it', () async {
     final pool = await ParallelBytesFile.open(path, maxWorkers: 4);
     await pool.truncate(0);

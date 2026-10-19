@@ -1,75 +1,86 @@
 # Benchmarks
 
-All benchmarks use [`package:benchmark_harness`](https://pub.dev/packages/benchmark_harness)
-and report a stable, greppable line:
-
-```
-name(Metric): value unit
-```
-
-Run from the repository root with Dart 3.13.5:
+All benchmarks use [`package:benchmark_test`](https://pub.dev/packages/benchmark_test)
+0.1.2. It reports **ops/sec**, relative margin of error (RME), sample count and
+JSONL, and runs the same file under JIT and AOT:
 
 ```sh
-dart run benchmark/bytes_benchmark.dart
-dart run benchmark/uint64_benchmark.dart
-dart run benchmark/io_benchmark.dart          # 1 GiB file
-dart run benchmark/parallel_benchmark.dart    # isolate pool, 1/2/4/8/16 workers
-dart run benchmark/iocp_benchmark.dart        # Windows IOCP QD sweep
-dart run benchmark/random_32g_benchmark.dart  # 32 GiB file, ~30 s fill
-BYTES_BENCH_GB=8 dart run benchmark/random_32g_benchmark.dart
+dart run benchmark_test benchmark/benchmarks_test.dart
+dart run benchmark_test --compile jit,aot benchmark/benchmarks_test.dart
+dart run benchmark_test --output jsonl benchmark/benchmarks_test.dart
 ```
 
-`BYTES_POOL_IOCP=1` switches the pool benchmark to the optional IOCP worker
-engine; the default is the mmap batch engine (faster for multi-worker hot
-files in our measurements).
+Files:
 
-The 32 GiB benchmark creates the file under the system temp directory, fills it
-with real data, measures, and deletes it.  `BYTES_BENCH_GB` overrides the size.
+| File | Workload |
+|---|---|
+| `benchmarks_test.dart` | core `Bytes`/`BytesMut`/`Uint64`, 1 GiB file I/O, mmap, isolate pool |
+| `random_32g_benchmarks_test.dart` | 32 GiB (or `BYTES_BENCH_GB`) random 4K pread/pwrite/mmap |
+| `iocp_benchmarks_test.dart` | Windows IOCP QD 1/8/32 |
 
-## What is measured
+The 32 GiB file is created once in `setUpAll`, filled with real data, measured,
+and deleted in `tearDownAll`. `BYTES_BENCH_GB=8` runs a smaller file:
 
-| File | Workload | Metric |
-|---|---|---|
-| `bytes_benchmark` | slice, getUint32, copyTo, BytesMut.putUint32 | latency (µs/op) |
-| `uint64_benchmark` | int add, Uint64 add/compare/mul, BigInt add | latency (µs/op) |
-| `io_benchmark` | 8 MiB sequential read/write, 4K random read/write, mmap 4K | MiB/s, IOPS |
-| `parallel_benchmark` | pool of 1–16 workers, 4K reads, batch 32 | IOPS, MiB/s |
-| `iocp_benchmark` | Windows single-worker QD 1–128, 4K random read/write | IOPS, MiB/s |
-| `random_32g_benchmark` | 32 GiB file, 4K random pread/pwrite/mmap | IOPS, MiB/s |
+```sh
+BYTES_BENCH_GB=8 dart run benchmark_test benchmark/random_32g_benchmarks_test.dart
+```
+
+## Reading the numbers
+
+`benchmark_test` measures the whole body. The body sizes are in the names:
+
+- `file.read.8MiB`: one 8 MiB read per op → throughput = ops/sec × 8 MiB.
+- `file.read.random4K`: one 4 KiB read per op → IOPS = ops/sec.
+- `mmap.read.random4K`: one 4 KiB copy per op → IOPS = ops/sec.
+- `pool.read.random4K.wN`: one batch of `N × 32` 4 KiB reads per op →
+  IOPS = ops/sec × N × 32.
+- `pool.read.sequential4K.w4`: one coalesced batch of 32 adjacent 4 KiB reads
+  per op; this exercises the adjacent-range merging in `readMany`.
+- `iocp.read.random4K.qdN`: one QD-`N` batch per op → IOPS = ops/sec × N.
+
+`benchmark_test` rounds average duration to microseconds; for sub-microsecond
+bodies use the reported ops/sec, not the duration field.
+
+## Sample 1 GiB run (JIT, Windows)
+
+These are one local run, not guarantees:
+
+| Body | reported ops/sec | converted |
+|---|---:|---:|
+| `file.read.8MiB` | ~656 | ~5.2 GiB/s |
+| `file.write.8MiB` | ~485 | ~3.9 GiB/s |
+| `file.read.random4K` | ~151k | 151k IOPS |
+| `file.write.random4K` | ~157k | 157k IOPS |
+| `pool.read.random4K.w1` | ~3.1k batches | ~99k IOPS |
+| `pool.read.random4K.w16` | ~467 batches | ~239k IOPS |
+| `pool.read.sequential4K.w4` | ~11.5k batches | ~366k IOPS |
+| `iocp.read.random4K.qd8` | ~12.4k batches | ~99k IOPS |
+| `iocp.read.random4K.qd32` | ~3.3k batches | ~107k IOPS |
+
+The pool's `sequential4K` body benefits from adjacent-range coalescing; the
+`random4K` body does not merge and therefore measures the dispatch path.
 
 ## Caveats
 
-- `pwrite`/mmap-write IOPS are **buffered**; the file is flushed in teardown,
-  not per operation.  Do not use these numbers as durable-write numbers.
-- The 32 GiB file exceeds the 16 GB RAM of the development machine, so random
-  reads are disk-bound; mmap cold reads pay page faults.
-- Sequential reads after the fill/write pass are page-cache friendly.  They are
-  a throughput ceiling, not a cold-disk number.
-- The isolate pool's `read` returns a transferred buffer.  For hot, tiny 4K
-  reads the transfer/allocation cost dominates; use direct `MmapFile` for hot
-  random access and the pool for cold/disk-bound or larger operations.
-- `IocpFile` is Windows-only; its numbers depend on page cache (Windows has no
-  unprivileged drop-cache).
+- `pwrite` and mmap writes are **buffered**; the file is flushed in teardown,
+  not per operation. Do not read them as durable-write numbers.
+- The 32 GiB file exceeds the development machine's 16 GB RAM, so random reads
+  are disk-bound; mmap cold reads also pay page faults.
+- Sequential reads after the fill pass are page-cache friendly; they are a
+  throughput ceiling, not a cold-disk number.
+- Windows has no unprivileged drop-cache, so IOCP hot-file numbers are not cold
+  device numbers.
+- The pool returns transferred buffers. For hot tiny 4K reads the transfer and
+  allocation cost dominates; use direct `MmapFile` for hot random access and
+  the pool for disk-bound or larger operations.
+- JS/Wasm targets were not validated for `benchmark_test`; CI runs JIT/AOT on
+  the Windows benchmark runner only.
 
-## Latest measured results (2026-10-19)
+## CI
 
-Windows, UMIS NVMe SSD, 32 logical CPUs, 16.6 GB RAM, Dart 3.13.5:
-
-| Benchmark | Result |
-|---|---:|
-| Sequential read 1 GiB (8 MiB blocks, cached) | 7.71 GiB/s |
-| Sequential write 1 GiB (8 MiB blocks, cached) | 4.55 GiB/s |
-| 32 GiB 4K random pread | 7.35k IOPS / 28.7 MiB/s |
-| 32 GiB 4K random pwrite | 95.6k IOPS / 373 MiB/s (buffered) |
-| 32 GiB 4K random mmap read | 5.0k IOPS / 19.5 MiB/s (cold) |
-| 32 GiB 4K random mmap write | 5.0k IOPS / 19.4 MiB/s (cold) |
-| Isolate pool 4K read, 1 worker | 10.6k IOPS (1 GiB warm, batch 32) |
-| Isolate pool 4K read, 16 workers | **194.4k IOPS / 759 MiB/s** (1 GiB warm, batch 32) |
-| Isolate pool 4K read, 16 workers (32 GiB cold) | **106.7k IOPS / 417 MiB/s** |
-| `IocpFile` 4K read, 1 worker QD8/QD32 (1 GiB warm) | 97k / **102k** IOPS |
-| `IocpFile` 4K write, 1 worker QD8/QD32 (1 GiB warm) | 113k / **114k** IOPS |
-
-The pool scales near-linearly on a warm 1 GiB file; on a 32 GiB cold file it
-reaches 106.7k IOPS because the disk itself becomes the shared bottleneck.
-Batch size 32 (`ParallelBytesFile.batchSize`) amortizes the isolate transfer
-and lets one worker issue a deeper queue.
+`.github/workflows/bench.yml` is manual (Windows) for 32 GiB runs. On
+push/manual runs, `.github/workflows/ci.yml` runs the core/1 GiB/pool suite,
+the random 4 GiB suite, and the IOCP sweep after all tests pass, then renders
+`assets/benchmarks.svg` and uploads JSONL + SVG. It commits the SVG on
+push/manual only (PR runs stop after tests). `dart test` does not execute
+`benchmark/`.

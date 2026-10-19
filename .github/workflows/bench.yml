@@ -1,8 +1,7 @@
 name: Benchmark (Windows)
 
-# Manual only: a 32 GiB run materialises a large file and takes minutes.
-# Benchmarks use package:benchmark_harness and print stable
-# `name(Metric): value unit` lines.
+# Manual only: the 32 GiB run materialises a large file and takes minutes.
+# All benchmarks use package:benchmark_test (JIT/AOT, ops/sec + RME, JSONL).
 
 on:
   workflow_dispatch:
@@ -12,8 +11,8 @@ on:
         required: true
         default: "32"
         type: string
-      include_parallel:
-        description: Also run the isolate-pool 1 GiB benchmark.
+      compile_aot:
+        description: Compile the 1 GiB suite with both JIT and AOT.
         required: true
         default: true
         type: boolean
@@ -50,30 +49,40 @@ jobs:
           Get-PSDrive -PSProvider FileSystem |
             Select-Object Name, @{n = 'FreeGiB'; e = { [math]::Round($_.Free / 1GB, 1) } }
 
-      - name: Random 4K benchmark (benchmark_harness)
+      - name: Core + 1 GiB + pool (benchmark_test)
+        shell: pwsh
+        run: |
+          $compile = '${{ inputs.compile_aot }}'
+          $targets = if ($compile -eq 'true') { 'jit,aot' } else { 'jit' }
+          $output = & dart run benchmark_test --compile $targets `
+            --output jsonl benchmark/benchmarks_test.dart 2> bench-core.stderr.log
+          $code = $LASTEXITCODE
+          $json = $output | Where-Object { $_ -match '^\s*\{' }
+          $json | Set-Content -Encoding utf8 bench-core.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) { exit $code }
+
+      - name: Random 4K benchmark (benchmark_test)
         shell: pwsh
         run: |
           $env:BYTES_BENCH_GB = '${{ inputs.size_gb }}'
-          $output = & dart run benchmark/random_32g_benchmark.dart 2>&1
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/random_32g_benchmarks_test.dart 2> bench-random.stderr.log
           $code = $LASTEXITCODE
-          $output | Tee-Object -FilePath bench-random.md
+          $json = $output | Where-Object { $_ -match '^\s*\{' }
+          $json | Set-Content -Encoding utf8 bench-random.jsonl
+          $output | Select-Object -Last 5
           if ($code -ne 0) { exit $code }
 
-      - name: Sequential / mmap 1 GiB benchmark
+      - name: Windows IOCP QD sweep (benchmark_test)
         shell: pwsh
         run: |
-          $output = & dart run benchmark/io_benchmark.dart 2>&1
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/iocp_benchmarks_test.dart 2> bench-iocp.stderr.log
           $code = $LASTEXITCODE
-          $output | Tee-Object -FilePath bench-io.md
-          if ($code -ne 0) { exit $code }
-
-      - name: Isolate pool benchmark
-        if: ${{ inputs.include_parallel }}
-        shell: pwsh
-        run: |
-          $output = & dart run benchmark/parallel_benchmark.dart 2>&1
-          $code = $LASTEXITCODE
-          $output | Tee-Object -FilePath bench-parallel.md
+          $json = $output | Where-Object { $_ -match '^\s*\{' }
+          $json | Set-Content -Encoding utf8 bench-iocp.jsonl
+          $output | Select-Object -Last 5
           if ($code -ne 0) { exit $code }
 
       - name: Upload benchmark results
@@ -81,5 +90,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: blit-bench-${{ inputs.size_gb }}g
-          path: bench-*
+          path: bench-*.jsonl
           if-no-files-found: ignore

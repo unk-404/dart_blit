@@ -1,6 +1,8 @@
 # Files excluded from the pub.dev package.
 .agents/
 .dart_tmp/
+.dart_tool/
+build/
 .github/
 .vscode/
 benchmark/
@@ -8,5 +10,6 @@ docs/
 tool/
 test/
 flutter_example/
+assets/fonts/*.ttf
 analysis_options.yaml
 pubspec.lock

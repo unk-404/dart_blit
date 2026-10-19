@@ -1,7 +1,9 @@
 name: CI
 
-# Runs on every push / PR.  The 32 GiB benchmark is a separate, manual workflow
-# (`.github/workflows/bench.yml`) because it needs a huge scratch file.
+# Runs on every push / PR.  On push/manual branch runs, a Windows benchmark job
+# runs after all tests, renders assets/benchmarks.svg and commits it with
+# [skip ci]; PR runs stop after the tests.  The 32 GiB benchmark is a separate,
+# manual workflow (`.github/workflows/bench.yml`).
 on:
   push:
   pull_request:
@@ -178,65 +180,95 @@ jobs:
         run: flutter build macos --debug --no-pub
 
   # ---------------------------------------------------------------------------
-  # Android: debug APK (no emulator, no signing).
+  # After all tests pass: benchmark on Windows, render the README SVG, upload
+  # artifacts, and (on push/manual runs) commit the updated SVG.
+  #
+  # Recursion guard: a push made with the default GITHUB_TOKEN does not trigger
+  # a new workflow run, and the commit message also carries [skip ci].
   # ---------------------------------------------------------------------------
-  android:
-    name: Flutter / Android APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    defaults:
-      run:
-        working-directory: flutter_example
+  benchmark-svg:
+    name: Benchmark + SVG
+    needs: [dart, web, flutter]
+    if: github.event_name != 'pull_request' && github.ref_type == 'branch'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "17"
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
         with:
-          channel: stable
-          flutter-version: "3.47.7"
-          cache: true
+          sdk: 3.13.5
 
-      - name: Show Flutter version
-        run: flutter --version
+      - name: Dart pub get
+        run: dart pub get
 
-      - name: flutter pub get
-        run: flutter pub get
+      - name: Benchmark core + 1 GiB + pool
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/benchmarks_test.dart 2> bench-core.stderr.log
+          $code = $LASTEXITCODE
+          $output | Where-Object { $_ -match '^\s*\{' } |
+            Set-Content -Encoding utf8 bench-core.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) { exit $code }
 
-      - name: flutter build apk --debug
-        run: flutter build apk --debug --no-pub
+      - name: Benchmark random 4 GiB
+        shell: pwsh
+        env:
+          BYTES_BENCH_GB: "4"
+        run: |
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/random_32g_benchmarks_test.dart 2> bench-random.stderr.log
+          $code = $LASTEXITCODE
+          $output | Where-Object { $_ -match '^\s*\{' } |
+            Set-Content -Encoding utf8 bench-random.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) { exit $code }
 
-  # ---------------------------------------------------------------------------
-  # iOS: build only, unsigned (no provisioning profile / certificate needed).
-  # ---------------------------------------------------------------------------
-  ios:
-    name: Flutter / iOS (no codesign)
-    runs-on: macos-latest
-    timeout-minutes: 35
-    defaults:
-      run:
-        working-directory: flutter_example
-    steps:
-      - uses: actions/checkout@v4
+      - name: Benchmark IOCP QD sweep
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/iocp_benchmarks_test.dart 2> bench-iocp.stderr.log
+          $code = $LASTEXITCODE
+          $output | Where-Object { $_ -match '^\s*\{' } |
+            Set-Content -Encoding utf8 bench-iocp.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) { exit $code }
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - name: Render benchmark SVG
+        run: >
+          dart run tool/render_benchmark_svg.dart --out assets/benchmarks.svg
+          --commit "${{ github.sha }}"
+          bench-core.jsonl bench-random.jsonl bench-iocp.jsonl
+
+      - name: Upload benchmark data + SVG
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          channel: stable
-          flutter-version: "3.47.7"
-          cache: true
+          name: blit-benchmark-svg
+          path: |
+            bench-*.jsonl
+            assets/benchmarks.svg
+          if-no-files-found: ignore
 
-      - name: Show Flutter version
-        run: flutter --version
-
-      - name: flutter pub get
-        run: flutter pub get
-
-      - name: flutter build ios --no-codesign
-        run: flutter build ios --no-codesign --no-pub
+      - name: Commit updated SVG
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/benchmarks.svg
+          if (git diff --cached --quiet) {
+            Write-Host "benchmark SVG unchanged"
+            exit 0
+          }
+          git commit -m "chore(bench): update benchmark SVG [skip ci]"
+          git push

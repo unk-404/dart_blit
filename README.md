@@ -4,6 +4,8 @@ Zero-copy `Bytes` / `BytesMut` and high-performance random-access file I/O for
 Dart and Flutter. Native I/O is pure `dart:ffi` (no C, no native build hooks);
 Web I/O uses OPFS chunk files and a dedicated worker.
 
+![blit benchmark table](https://raw.githubusercontent.com/inenure/blit/main/assets/benchmarks.svg)
+
 ## Features
 
 - **Zero-copy `Bytes`**: `(buffer, offset, length)` views; `slice`/`sublist` are O(1).
@@ -26,14 +28,16 @@ through `dart:ffi`; the only runtime dependency is `package:ffi` (for
 
 | Capability | Windows | Linux | macOS | Android | iOS | Web |
 |---|---|---|---|---|---|---|
-| `Bytes`/`BytesMut`/`Uint64` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `BytesFile` (`dart:io`) | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| Native mmap (`bytes_ffi.dart`) | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| `Bytes`/`BytesMut`/`Uint64` | ✅ | ✅ | ✅ | ✅* | ✅* | ✅ |
+| `BytesFile` (`dart:io`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
+| Native mmap (`bytes_ffi.dart`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
 | `IocpFile` | ✅ | — | — | — | — | — |
-| `ParallelBytesFile` | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| `ParallelBytesFile` | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
 | OPFS backend | — | — | — | — | — | ✅ |
 
-The local test matrix is Windows; Linux/macOS/Android/iOS/Web are covered by CI.
+`*` Android/iOS are not built or run by CI; the pure-Dart core is
+platform-independent, but mobile file paths are **unverified**. CI covers
+Dart on Ubuntu/macOS/Windows, Chrome on Ubuntu, and Flutter desktop/Web only.
 OPFS `createSyncAccessHandle` is dedicated-worker-only, takes an exclusive lock
 per file, and Web file backends are serialized per file (no parallel pool).
 
@@ -134,9 +138,9 @@ zero-fill cost; the backend stores 16 MiB chunks plus a manifest instead.
 
 ## Performance
 
-`package:benchmark_harness` suite in the repository's `benchmark/` directory
-(not included in the published package). Local Windows x64, UMIS NVMe SSD,
-32 logical CPUs, 16.6 GB RAM, Dart 3.13.5:
+`package:benchmark_test` suite in the repository's `benchmark/` directory
+(repository-only, not in the published package; JIT/AOT, ops/sec + RME).
+Local Windows x64, UMIS NVMe SSD, 32 logical CPUs, 16.6 GB RAM, Dart 3.13.5:
 
 | Workload | Result |
 |---|---:|
@@ -148,6 +152,8 @@ zero-fill cost; the backend stores 16 MiB chunks plus a manifest instead.
 | `IocpFile` 4K read, single worker QD32 (1 GiB warm) | 93k–112k IOPS (JIT), ~138k (AOT) |
 | Isolate pool 4K read, 16 workers (1 GiB warm) | 194.4k IOPS / 759 MiB/s |
 | Isolate pool 4K read, 16 workers (32 GiB cold) | 106.7k IOPS / 417 MiB/s |
+| `readMany` 4K sequential, 4 workers (256 MiB hot) | 2.1 GiB/s (adjacent ranges coalesced) |
+| `readMany` 4K random, 4 workers (256 MiB hot) | 1.1 GiB/s |
 
 4K cold random is QD1 disk-latency-bound; the pool hides it with worker
 concurrency. `pwrite` numbers are page-cache writes, not durability. mmap cold
@@ -171,15 +177,20 @@ dart run example/bytes_example.dart
 VM tests cover bytes/Uint64 fuzz, file backends, mmap lifetime, 100k-op stress,
 isolate-pool barriers and (skipped by default) 32 GiB sparse writes. Chrome
 tests cover the OPFS backend and Web fuzz. CI runs Dart on
-Ubuntu/macOS/Windows, Chrome on Ubuntu, Flutter builds on desktop/mobile, and a
-manual 32 GiB benchmark workflow. Other platforms are validated by CI; the
-local development machine is Windows.
+Ubuntu/macOS/Windows, Chrome on Ubuntu, Flutter desktop/Web builds, and on
+push/manual runs a Windows benchmark job after all tests pass. That job renders
+`assets/benchmarks.svg`, uploads the JSONL + SVG artifact, and commits the SVG
+with `[skip ci]`; PR runs stop after the tests. The manual
+`bench.yml` workflow remains for 32 GiB runs. The local development machine is
+Windows.
 
 ## Limitations
 
 - OPFS sync handles are worker-only and exclusive per file; the Web backend is
-  serialized per file. Safari/Firefox are CI/feature-detect targets, not locally
+  serialized per file. Safari/Firefox are feature-detect targets, not locally
   validated.
+- Android/iOS are **not built or run by CI**; the pure-Dart core should work,
+  but native file paths on mobile are unverified and not claimed as supported.
 - `IocpFile` is Windows-only; cold-device behavior above 4 GiB is not locally
   verified (Windows has no unprivileged drop-cache).
 - Zeroize is `memset`-level; no compiler-proof `SecureZeroMemory` without a C
