@@ -47,21 +47,23 @@ These are one local run, not guarantees:
 
 | Body | reported ops/sec | converted |
 |---|---:|---:|
-| `file.read.8MiB` | ~850 | ~6.6 GiB/s |
-| `file.write.8MiB` | ~574 | ~4.5 GiB/s |
-| `file.read.random4K` | ~174k | 174k IOPS |
-| `file.write.random4K` | ~155k | 155k IOPS |
+| `file.read.8MiB` | ~850 | ~6.4 GiB/s |
+| `file.write.8MiB` | ~574 | ~3.7 GiB/s |
+| `file.read.random4K` | ~155k | 155k IOPS |
+| `file.write.random4K` | ~156k | 156k IOPS |
 | `pool.read.random4K.w1` | ~8.3k batches | ~264k IOPS |
-| `pool.read.random4K.w16` | ~1.6k batches | ~823k IOPS |
-| `pool.read.sequential4K.w4` | ~14.6k batches | ~467k IOPS |
+| `pool.read.random4K.w4` | ~5.7k batches | ~732k IOPS |
+| `pool.read.random4K.w8` | ~3.1k batches | ~790k IOPS |
+| `pool.read.random4K.w16` | ~1.8k batches | ~926k IOPS |
+| `pool.read.sequential4K.w4` | ~16.8k batches | ~536k IOPS |
 | `iocp.read.random4K.qd8` | ~12.4k batches | ~99k IOPS |
 | `iocp.read.random4K.qd32` | ~3.3k batches | ~107k IOPS |
 
 The pool's `sequential4K` body benefits from adjacent-range coalescing. The
 1 GiB pool benchmarks also use the read-only full-file mmap cache (default
-limit 1 GiB); before that cache, 16 workers measured ~237k IOPS instead of
-~823k. The random 4 GiB body does not use the cache (file is larger than the
-limit) and measures the dispatch path.
+limit 1 GiB); before that cache, 16 workers measured ~237k IOPS. The random
+4 GiB body does not use the cache (file is larger than the limit) and measures
+the dispatch path.
 
 ## Caveats
 

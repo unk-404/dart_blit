@@ -9,6 +9,9 @@
 // For the 8 MiB file bodies, throughput = ops/sec * 8 MiB.
 // The 32 GiB workload is in random_32g_benchmarks_test.dart.
 
+@Timeout(Duration(minutes: 5))
+library;
+
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -16,7 +19,8 @@ import 'dart:typed_data';
 import 'package:benchmark_test/benchmark_test.dart';
 import 'package:blit/blit.dart';
 import 'package:blit/bytes_ffi.dart';
-import 'package:test/test.dart' show setUpAll, tearDownAll;
+import 'package:test/test.dart'
+    show Timeout, group, setUp, setUpAll, tearDown, tearDownAll;
 
 const int _fileSize = 1 << 30;
 const int _seqBlock = 8 << 20;
@@ -36,7 +40,6 @@ late final MappedRegion _readRegion;
 late final MappedRegion _writeRegion;
 late final Uint8List _readView;
 late final Uint8List _writeView;
-final Map<int, ParallelBytesFile> _pools = <int, ParallelBytesFile>{};
 int _sink = 0;
 var _seqOffset = 0;
 var _ioIndex = 0;
@@ -52,16 +55,12 @@ Uint8List _pattern(int length) {
 int _randomOffset() => _rnd.nextInt(_fileSize ~/ _block) * _block;
 
 Future<ParallelBytesFile> _pool(int workers) async {
-  final existing = _pools[workers];
-  if (existing != null) return existing;
-  final pool = await ParallelBytesFile.open(
+  return ParallelBytesFile.open(
     _path,
     create: false,
     readOnly: true,
     maxWorkers: workers,
   );
-  _pools[workers] = pool;
-  return pool;
 }
 
 void _ensureFile() {
@@ -91,10 +90,6 @@ void main() {
   });
 
   tearDownAll(() async {
-    for (final pool in _pools.values) {
-      await pool.close();
-    }
-    _pools.clear();
     _readRegion.close();
     _writeRegion.close();
     _file.close();
@@ -201,33 +196,52 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // Isolate pool.  One measured body = batch 32 per worker.
+  // Isolate pool.  One measured body = batch 32 per worker.  Each worker-count
+  // group owns its pool only for that group; closing it releases the 1 GiB
+  // mmap cache before the next group starts (important on small CI runners).
+  // BYTES_BENCH_MAX_WORKERS can cap the sweep on low-core CI machines.
   // -------------------------------------------------------------------------
-  for (final workers in [1, 2, 4, 8, 16]) {
-    benchmark('pool.read.random4K.w$workers', () async {
-      final pool = await _pool(workers);
-      final offsets = [
-        for (var i = 0; i < workers * ParallelBytesFile.batchSize; i++)
-          _randomOffset(),
-      ];
-      final chunks = await pool.readMany(offsets, _block);
-      for (final chunk in chunks) {
-        _sink ^= chunk[0];
+  final maxWorkers = int.tryParse(
+        Platform.environment['BYTES_BENCH_MAX_WORKERS'] ?? '',
+      ) ??
+      16;
+  for (final workers in [1, 2, 4, 8, 16].where((w) => w <= maxWorkers)) {
+    group('pool $workers', () {
+      late ParallelBytesFile pool;
+
+      setUp(() async {
+        pool = await _pool(workers);
+      });
+      tearDown(() async {
+        await pool.close();
+      });
+
+      benchmark('pool.read.random4K.w$workers', () async {
+        final offsets = [
+          for (var i = 0; i < workers * ParallelBytesFile.batchSize; i++)
+            _randomOffset(),
+        ];
+        final chunks = await pool.readMany(offsets, _block);
+        for (final chunk in chunks) {
+          _sink ^= chunk[0];
+        }
+      });
+
+      if (workers == 4) {
+        // Sequential readMany: coalescing turns every 32 adjacent 4K reads
+        // into a single larger read.  The measured unit is one batch.
+        benchmark('pool.read.sequential4K.w4', () async {
+          final base =
+              (_ioIndex++ * 4096 * 32) % (_fileSize - 4096 * 32);
+          final offsets = [
+            for (var i = 0; i < 32; i++) base + i * _block,
+          ];
+          final chunks = await pool.readMany(offsets, _block);
+          for (final chunk in chunks) {
+            _sink ^= chunk[0];
+          }
+        });
       }
     });
   }
-
-  // Sequential readMany: coalescing turns every 32 adjacent 4K reads into a
-  // single larger read.  The measured unit is one batch.
-  benchmark('pool.read.sequential4K.w4', () async {
-    final pool = await _pool(4);
-    final base = (_ioIndex++ * 4096 * 32) % (_fileSize - 4096 * 32);
-    final offsets = [
-      for (var i = 0; i < 32; i++) base + i * _block,
-    ];
-    final chunks = await pool.readMany(offsets, _block);
-    for (final chunk in chunks) {
-      _sink ^= chunk[0];
-    }
-  });
 }

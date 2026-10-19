@@ -107,7 +107,7 @@ final class _SvgFont {
   }
 }
 
-final _font = _SvgFont.load('assets/fonts/zcool_kuaile_glyphs.json');
+final _font = _SvgFont.load('assets/fonts/mplus_rounded1c_glyphs.json');
 
 void main(List<String> args) {
   var out = 'assets/benchmarks.svg';
@@ -181,6 +181,16 @@ List<_Row> _rows(Map<String, _Entry> e) {
     '#B9FBC0',
   ];
 
+  _Entry? find(String name) {
+    final direct = e[name];
+    if (direct != null) return direct;
+    // package:test groups prefix the name, e.g. "pool 4 pool.read.random4K.w4".
+    for (final entry in e.entries) {
+      if (entry.key.endsWith(name)) return entry.value;
+    }
+    return null;
+  }
+
   void add(
     String name,
     String label,
@@ -188,7 +198,7 @@ List<_Row> _rows(Map<String, _Entry> e) {
     String Function(_Entry) result,
     double Function(_Entry) bar,
   ) {
-    final entry = e[name];
+    final entry = find(name);
     if (entry == null) return;
     rows.add(_Row(
       label,
@@ -234,6 +244,13 @@ List<_Row> _rows(Map<String, _Entry> e) {
     '4 KiB · batch 32',
     (x) => '${_fmt(x.value * 4 * 32)} IOPS',
     (x) => x.value * 4 * 32,
+  );
+  add(
+    'pool.read.random4K.w8',
+    'Pool read · 8 workers',
+    '4 KiB · batch 32',
+    (x) => '${_fmt(x.value * 8 * 32)} IOPS',
+    (x) => x.value * 8 * 32,
   );
   add(
     'pool.read.random4K.w16',

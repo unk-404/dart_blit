@@ -157,10 +157,10 @@ Local Windows x64, UMIS NVMe SSD, 32 logical CPUs, 16.6 GB RAM, Dart 3.13.5:
 | 32 GiB 4K random pwrite | 95.6k IOPS / 373 MiB/s (buffered) |
 | 32 GiB 4K random mmap read (cold) | 5.0k IOPS / 19.5 MiB/s |
 | `IocpFile` 4K read, single worker QD32 (1 GiB warm) | 93k–112k IOPS (JIT), ~138k (AOT) |
-| Isolate pool 4K read, 16 workers (1 GiB warm, mmap cache) | **823k IOPS / 3.1 GiB/s** |
+| Isolate pool 4K read, 16 workers (1 GiB warm, mmap cache) | **926k IOPS / 3.5 GiB/s** |
 | Isolate pool 4K read, 16 workers (32 GiB cold) | 106.7k IOPS / 417 MiB/s |
-| Isolate pool 4K read, 4 workers (1 GiB warm, mmap cache) | 608k IOPS / 2.3 GiB/s |
-| Isolate pool 4K sequential readMany, 4 workers (1 GiB warm) | 467k IOPS / 1.8 GiB/s |
+| Isolate pool 4K read, 4 workers (1 GiB warm, mmap cache) | 732k IOPS / 2.8 GiB/s |
+| Isolate pool 4K sequential readMany, 4 workers (1 GiB warm) | 536k IOPS / 2.1 GiB/s |
 
 4K cold random is QD1 disk-latency-bound; the pool hides it with worker
 concurrency. `pwrite` numbers are page-cache writes, not durability. mmap cold

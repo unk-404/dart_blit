@@ -215,6 +215,8 @@ jobs:
 
       - name: Benchmark core + 1 GiB + pool
         shell: pwsh
+        env:
+          BYTES_BENCH_MAX_WORKERS: "8"
         run: |
           $output = & dart run benchmark_test --output jsonl `
             benchmark/benchmarks_test.dart 2> bench-core.stderr.log
@@ -222,7 +224,13 @@ jobs:
           $output | Where-Object { $_ -match '^\s*\{' } |
             Set-Content -Encoding utf8 bench-core.jsonl
           $output | Select-Object -Last 5
-          if ($code -ne 0) { exit $code }
+          if ($code -ne 0) {
+            if (Test-Path bench-core.stderr.log) {
+              Write-Host '--- benchmark stderr ---'
+              Get-Content bench-core.stderr.log
+            }
+            exit $code
+          }
 
       - name: Benchmark random 4 GiB
         shell: pwsh
@@ -235,7 +243,13 @@ jobs:
           $output | Where-Object { $_ -match '^\s*\{' } |
             Set-Content -Encoding utf8 bench-random.jsonl
           $output | Select-Object -Last 5
-          if ($code -ne 0) { exit $code }
+          if ($code -ne 0) {
+            if (Test-Path bench-random.stderr.log) {
+              Write-Host '--- benchmark stderr ---'
+              Get-Content bench-random.stderr.log
+            }
+            exit $code
+          }
 
       - name: Benchmark IOCP QD sweep
         shell: pwsh
@@ -246,7 +260,13 @@ jobs:
           $output | Where-Object { $_ -match '^\s*\{' } |
             Set-Content -Encoding utf8 bench-iocp.jsonl
           $output | Select-Object -Last 5
-          if ($code -ne 0) { exit $code }
+          if ($code -ne 0) {
+            if (Test-Path bench-iocp.stderr.log) {
+              Write-Host '--- benchmark stderr ---'
+              Get-Content bench-iocp.stderr.log
+            }
+            exit $code
+          }
 
       - name: Render benchmark SVG
         run: >
@@ -261,6 +281,7 @@ jobs:
           name: blit-benchmark-svg
           path: |
             bench-*.jsonl
+            bench-*.stderr.log
             assets/benchmarks.svg
           if-no-files-found: ignore
 
