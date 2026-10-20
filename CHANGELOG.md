@@ -2,6 +2,11 @@
 
 ## 0.1.4
 
+### Changed
+
+- Benchmark chart rendering moved to `benchcat` (`benchcat.toml`); CI uses
+  `unk-404/benchcat@master` instead of `benchmark_svg`.
+
 ### Fixed
 
 - Shared `io_uring` loops are now explicitly closable through

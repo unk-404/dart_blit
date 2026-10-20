@@ -268,20 +268,20 @@ jobs:
           Remove-Item bench-c.bin -Force -ErrorAction SilentlyContinue
 
       - name: Render benchmark SVG
-        # The action installs its own binary; input comes from [[series]] in
-        # bench-svg.toml, so no positional input is needed.
-        uses: unk-404/benchmark_svg@master
+        # The action installs benchcat itself; inputs come from [[series]] in
+        # benchcat.toml, so no positional input is needed.
+        uses: unk-404/benchcat@master
         with:
           format: benchmark_test
           out: assets/benchmarks.svg
-          config: bench-svg.toml
+          config: benchcat.toml
           font_file: assets/fonts/MPLUSRounded1c-Regular.ttf
 
       - name: Verify benchmark SVG
         shell: pwsh
         run: |
           if (!(Test-Path assets/benchmarks.svg)) {
-            throw 'bench-svg did not write assets/benchmarks.svg'
+            throw 'benchcat did not write assets/benchmarks.svg'
           }
           if ((Get-Item assets/benchmarks.svg).Length -le 0) {
             throw 'assets/benchmarks.svg is empty'

@@ -285,7 +285,7 @@ placeholder C track; they are not a language comparison. CI runs this suite
 alongside the native benchmarks.
 
 The card is generated from the `benchmark/` suite with
-[`bench-svg`](https://github.com/unk-404/benchmark_svg). Raw JSONL/SVG artifacts
+[`benchcat`](https://github.com/unk-404/benchcat). Raw JSONL/SVG artifacts
 are produced by CI; the chart is deterministic and reflects the latest default
 branch run.
 
@@ -310,7 +310,7 @@ dart run example/bytes_example.dart
 
 Chrome tests cover OPFS and Web fuzz. CI runs Dart on Ubuntu/macOS/Windows and
 Chrome on Ubuntu. On push/manual branch runs, a Windows benchmark job renders
-the SVG with `bench-svg`, uploads JSONL/SVG artifacts and commits the chart with
+the SVG with `benchcat`, uploads JSONL/SVG artifacts and commits the chart with
 `[skip ci]`. PR runs stop after tests. `workflow_dispatch` accepts
 `benchmark_gb` and `BYTES_BENCH_GB` controls local random-file benchmarks.
 

@@ -1,4 +1,4 @@
-# Rendered by bench-svg (https://github.com/unk-404/benchmark_svg).
+﻿# Rendered by benchcat (https://github.com/unk-404/benchcat).
 # One chart: native I/O (Dart vs C) plus core Bytes (Dart-only placeholder).
 [render]
 title = "blit vs C"
@@ -237,3 +237,4 @@ note = "1 byte - fixed destination"
 unit = "MiB/s"
 value = "value * 4096 / 1048576"
 group = "Reader/Writer"
+
