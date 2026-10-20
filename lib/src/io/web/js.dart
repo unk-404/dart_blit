@@ -32,7 +32,19 @@ JSObject? get jsStorageManager {
 @JS('Blob')
 extension type JsBlob._(JSObject _) implements JSObject {
   external factory JsBlob(JSArray<JSAny> parts, [JSObject? options]);
+
+  /// Blob size in bytes (exact up to 2^53).
+  external int get size;
+
+  /// Returns a new Blob containing bytes `[start, end)`.
+  external JsBlob slice([int start, int? end, String? contentType]);
+
+  /// Reads the whole Blob into an `ArrayBuffer`.
+  external JSPromise<JSArrayBuffer> arrayBuffer();
 }
+
+/// Reinterprets an existing JS `Blob`/`File` object as [JsBlob].
+JsBlob jsBlobFromObject(JSObject object) => object as JsBlob;
 
 /// A DOM `Worker` with only the members used by the OPFS client.
 @JS('Worker')
@@ -47,7 +59,9 @@ extension type JsWorker._(JSObject _) implements JSObject {
 
   @JS('postMessage')
   external void postMessageWithTransfer(
-      JSAny? message, JSArray<JSAny> transfer);
+    JSAny? message,
+    JSArray<JSAny> transfer,
+  );
 
   external void terminate();
 }
@@ -100,13 +114,16 @@ extension type JsAtomics._(JSObject _) implements JSObject {
   external int store(JSObject array, int index, int value);
   external int notify(JSObject array, int index, int count);
   external int compareExchange(
-      JSObject array, int index, int expected, int replacement);
+    JSObject array,
+    int index,
+    int expected,
+    int replacement,
+  );
   external JSObject waitAsync(JSObject array, int index, int value);
 }
 
 /// `{...}` as a JS object; used for Blob options and request literals.
-JSObject jsObject(Map<String, Object?> values) =>
-    values.jsify() as JSObject;
+JSObject jsObject(Map<String, Object?> values) => values.jsify() as JSObject;
 
 /// Calls `object[method](...)` and returns the raw JS result.
 JSAny? jsCall(JSObject object, String method, [List<JSAny?> args = const []]) =>

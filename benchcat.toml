@@ -154,6 +154,35 @@ unit = "IOPS"
 value = "value * 32"
 group = "io_uring"
 
+# Dart IndexedDB backend (browser-only, no native comparison).
+[[row]]
+id = "idb.read.random4K"
+label = "IndexedDB read 4K"
+note = "Chrome - 64 KiB chunks - 32 MiB file"
+unit = "IOPS"
+group = "Dart IndexedDB"
+
+[[row]]
+id = "idb.write.random4K"
+label = "IndexedDB write 4K"
+note = "Chrome - 64 KiB chunks - 32 MiB file"
+unit = "IOPS"
+group = "Dart IndexedDB"
+
+[[row]]
+id = "idb.read.sequential8MiB"
+label = "IndexedDB sequential read"
+note = "Chrome - 32 MiB file - warm cache"
+unit = "MiB/s"
+group = "Dart IndexedDB"
+
+[[row]]
+id = "idb.write.sequential8MiB"
+label = "IndexedDB sequential write"
+note = "Chrome - 32 MiB file"
+unit = "MiB/s"
+group = "Dart IndexedDB"
+
 # Core Bytes / BytesMut / reader / writer. Rust has no counterpart, so the
 # Rust tracks are placeholders; this is intentionally not a language comparison.
 [[row]]

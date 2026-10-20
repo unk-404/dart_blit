@@ -42,7 +42,30 @@ import 'manifest.dart';
 import 'opfs_client.dart';
 import 'web_bytes_file.dart';
 
+export 'blob_bytes_file.dart'
+    show WebBlobBytesFile, openBlobBytesFile, openBlobBytesFileTyped;
 export 'capabilities.dart';
+export 'idb_bytes_file.dart'
+    show
+        WebIndexedDbBytesFile,
+        WebIndexedDbException,
+        deleteIdbFile,
+        openIdbBytesFile,
+        openIdbBytesFileTyped,
+        shutdownIdbBackend;
+export 'idb_layout.dart'
+    show
+        IdbMeta,
+        decodeIdbMeta,
+        encodeIdbMeta,
+        idbChunkKey,
+        idbFileKey,
+        idbMetaKey,
+        kIdbDatabaseName,
+        kIdbDefaultChunkSize,
+        kIdbMaxChunkSize,
+        kIdbMinChunkSize,
+        kIdbStoreName;
 export 'chunk_layout.dart'
     show
         chunkCountFor,

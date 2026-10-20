@@ -203,15 +203,46 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
+  # IndexedDB benchmark in a real Chrome. Dart-only: this is Web storage, not a
+  # native/Rust comparison.
+  # ---------------------------------------------------------------------------
+  idb-bench:
+    name: IndexedDB benchmark / Chrome
+    needs: [dart, web]
+    if: github.event_name != 'pull_request' && github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+      - name: Dart pub get
+        run: dart pub get
+      - name: Run IndexedDB benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart test -p chrome benchmark/idb_benchmarks_test.dart \
+            2> bench-idb.stderr.log | grep '^{' > bench-idb.jsonl
+          test -s bench-idb.jsonl
+      - name: Upload IndexedDB benchmark data
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-idb
+          path: bench-idb.jsonl
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
   # After all tests pass: benchmark on Windows, render the README SVG, upload
   # artifacts, and (on push/manual runs) commit the updated SVG.
   #
-  # Recursion guard: a push made with the default GITHUB_TOKEN does not trigger
+  # Recursion guard: a push made with default GITHUB_TOKEN does not trigger
   # a new workflow run, and the commit message also carries [skip ci].
   # ---------------------------------------------------------------------------
   benchmark-svg:
     name: Benchmark + SVG
-    needs: [dart, web, rust-bench, dart-uring-bench]
+    needs: [dart, web, rust-bench, dart-uring-bench, idb-bench]
     if: github.event_name != 'pull_request' && github.ref_type == 'branch'
     runs-on: windows-latest
     timeout-minutes: 60
@@ -237,6 +268,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: bench-dart-uring
+          path: .
+      - name: Download IndexedDB benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-idb
           path: .
 
       - name: Set up Dart
@@ -323,7 +359,7 @@ jobs:
         shell: pwsh
         run: |
           Get-Content bench-core.jsonl, bench-random.jsonl, bench-iocp.jsonl, `
-            bench-bytes.jsonl, bench-uring.jsonl |
+            bench-bytes.jsonl, bench-uring.jsonl, bench-idb.jsonl |
             Set-Content -Encoding utf8 bench-dart.jsonl
 
       - name: Render benchmark SVG

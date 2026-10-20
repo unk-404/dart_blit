@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.6
+
+### Added
+
+- IndexedDB `BytesFile` backend (`openIdbBytesFile`): shared database/object
+  store, base64 path key prefixes, sparse 64 KiB chunk records, batched
+  transactions, and a 128-chunk LRU cache. It does not create a table per file.
+- IndexedDB key/metadata unit tests and Chrome end-to-end tests covering
+  chunk-crossing writes, sparse reads, truncation, reopen, read-only mode, and
+  multiple logical files sharing one store.
+- Read-only Web Blob backend (`openBlobBytesFile`): `Blob`/`File` becomes a
+  `BytesFile` with range reads, EOF clamping, and transparent whole-Blob caching
+  up to `cacheLimit` (8 MiB default). Writes/truncate/delete are rejected.
+
 ## 0.1.5
 
 ### Added

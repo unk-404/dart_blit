@@ -261,6 +261,46 @@ so the manifest stays single-writer. In a cross-origin-isolated page
 `SharedArrayBuffer` ring; larger payloads and non-isolated pages fall back to
 postMessage transfer.
 
+### IndexedDB backend
+
+IndexedDB is available as an explicit alternative when OPFS sync handles are
+not usable (for example in a context that blocks dedicated workers):
+
+```dart
+import 'package:blit/src/io/web/web.dart';
+
+final idb = await openIdbBytesFile('data/indexed.bin', chunkSize: 64 * 1024);
+await idb.writeAt(0, bytes);
+await idb.close();
+```
+
+The IndexedDB backend does not create one object store per file. It shares one
+database (`blit-bytes`) and one store (`records`) across the origin; each
+logical path is a base64 key prefix, and chunk keys are zero-padded so range
+deletes are cheap. Records are sparse (missing chunks read as zero), a 128-chunk
+LRU caches hot 64 KiB chunks, and reads/writes batch all touched chunks into one
+IndexedDB transaction. `openIdbBytesFile` supports `create`, `readOnly`,
+`chunkSize`, `databaseName`, and `storeName`.
+
+### Blob backend
+
+An immutable `Blob` or `File` can be exposed as a read-only `BytesFile`:
+
+```dart
+import 'dart:js_interop';
+import 'package:blit/src/io/web/js.dart' show JsBlob;
+import 'package:blit/src/io/web/web.dart';
+
+final blob = JsBlob([bytes.toJS].toJS);
+final file = await openBlobBytesFile(blob, cacheLimit: 8 * 1024 * 1024);
+final block = Uint8List(4096);
+await file.readAt(offset, block);
+```
+
+Small Blobs are materialized once and served from memory; larger ones use
+`Blob.slice()` per request without copying the whole file. Writes, truncate and
+delete throw `StateError`; `flush` is a no-op.
+
 ## Platform support
 
 | Capability | Windows | Linux | macOS | Android | iOS | Web |
@@ -272,6 +312,8 @@ postMessage transfer.
 | `UringBytesFile` | — | ✅ | — | — | — | — |
 | `ParallelBytesFile` | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
 | OPFS backend | — | — | — | — | — | ✅ |
+| IndexedDB backend | — | — | — | — | — | ✅ |
+| Blob backend (read-only) | — | — | — | — | — | ✅ |
 
 `*` Android/iOS are not built or run by CI; the pure-Dart core is portable, but
 mobile file paths are unverified. CI covers Dart on Ubuntu/macOS/Windows and
