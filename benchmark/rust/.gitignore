@@ -1,0 +1,3 @@
+# Cargo build output and the 1 GiB benchmark file.
+target/
+*.bin

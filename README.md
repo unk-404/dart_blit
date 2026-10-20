@@ -149,6 +149,26 @@ include `punchHole` (Windows/Linux), `cloneRangeFrom` (Windows), `preallocate`
 and `adviseRead` (macOS), and `cloneFileSync` (macOS `clonefile`, copy
 fallback). Unsupported filesystems throw; fall back to `zeroize` or a copy.
 
+### ReadFast
+
+`ReadFast` selects a native read engine automatically:
+
+```dart
+final fast = await ReadFast.open('/data/archive.bin');
+try {
+  final block = Uint8List(4096);
+  await fast.readAt(offset, block);
+} finally {
+  await fast.close();
+}
+```
+
+Windows uses a per-worker mmap pool for files up to 1 GiB and an IOCP-backed
+pool above that. Linux uses io_uring above the mmap threshold and an mmap pool
+below it, falling back to the isolate pool if the kernel rejects io_uring.
+`workers`, `mmapLimit`, `maxQueue`, and `preferUring` are overridable; the
+selected backend is exposed as `ReadFast.engine`.
+
 ### Isolate pool
 
 ```dart
@@ -271,17 +291,18 @@ avoids it. OPFS uses chunk files for the same reason.
 
 ## Performance
 
-The benchmark card above compares Dart with the C counterpart in
-[`benchmark/c/blit_bench.c`](benchmark/c/blit_bench.c). Both implement the same
-six single-thread operations: 8 MiB sequential read/write, 4 KiB random
-pread/pwrite, and 4 KiB random mmap read/write. Dart-only pool, large-file and
-IOCP rows keep a placeholder C track because they have no C counterpart by
-design; the C file rows also perform the same scratch copy as `readAt`/`writeAt`.
+The benchmark card compares Dart with the Rust counterpart in
+[`benchmark/rust`](benchmark/rust). Both implement the same six single-thread
+operations: 8 MiB sequential read/write, 4 KiB random pread/pwrite, and 4 KiB
+random mmap read/write. The Rust crate has feature-gated `iocp` (Windows) and
+`uring` (Linux) QD32 rows; Dart-only pool, large-file and core-Bytes rows use
+placeholders. The common file rows perform the same scratch copy as
+`readAt`/`writeAt`.
 
 The same card includes core `Bytes` / `BytesMut` / reader / writer rows from
 [`benchmark/bytes_benchmarks_test.dart`](benchmark/bytes_benchmarks_test.dart),
-including a raw `Uint8List` baseline. Those rows are Dart-only and use a
-placeholder C track; they are not a language comparison. CI runs this suite
+including a raw `Uint8List` baseline. Those rows are Dart-only and use
+placeholder Rust tracks; they are not a language comparison. CI runs this suite
 alongside the native benchmarks.
 
 The card is generated from the `benchmark/` suite with

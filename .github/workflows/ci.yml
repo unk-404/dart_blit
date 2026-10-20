@@ -275,7 +275,6 @@ jobs:
           format: benchmark_test
           out: assets/benchmarks.svg
           config: benchcat.toml
-          font_file: assets/fonts/MPLUSRounded1c-Regular.ttf
 
       - name: Verify benchmark SVG
         shell: pwsh

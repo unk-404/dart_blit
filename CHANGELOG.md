@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.5
+
+### Added
+
+- `ReadFast`: automatic read-engine selection. Windows uses a per-worker
+  mmap-backed isolate pool up to 1 GiB and an IOCP-backed pool above it; Linux
+  uses io_uring above the mmap threshold and an mmap pool below it; unsupported
+  io_uring kernels fall back to the pool.
+- `benchmark/rust`: Rust counterpart benchmark with `memmap2` common rows and
+  feature-gated `iocp` / `uring` QD32 engine rows.
+
+### Changed
+
+- The Rust benchmark is the intended replacement for the C counterpart; CI
+  wiring is intentionally left to the repository owner.
+- Benchcat now supplies its bundled OFL font catalogue; the repository
+  `assets/fonts/` directory and CI `font_file` override were removed.
+
 ## 0.1.4
 
 ### Changed

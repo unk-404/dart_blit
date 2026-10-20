@@ -1,0 +1,38 @@
+[package]
+name = "bytes-bench-rust"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+description = "Rust counterpart of benchmark/c/blit_bench.c (6 shared ops + optional IOCP/uring rows)."
+
+[[bin]]
+name = "bytes-bench-rust"
+path = "src/main.rs"
+
+[dependencies]
+memmap2 = "0.9"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = { version = "0.7", optional = true }
+
+[features]
+default = []
+# Windows: raw Win32 IOCP, QD32 batched 4 KiB random reads/writes.
+iocp = ["dep:windows"]
+# Linux: io_uring, QD32 batched 4 KiB random reads/writes.
+uring = ["dep:io-uring"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
