@@ -100,6 +100,12 @@ void main() {
     _writeView = _writeRegion.bytes;
     _seqPtr = calloc<Uint8>(_seqBlock);
     _seqPtr.asTypedList(_seqBlock).setAll(0, _seqBuf);
+    // Warm the whole 1 GiB file and the readAt JIT path before measuring.
+    // Otherwise the first sequential row pays cold-page cost that later rows
+    // (mmap / pointer) do not; Rust does the same full-file warmup.
+    for (var off = 0; off < _fileSize; off += _seqBlock) {
+      _file.readAt(off, _seqBuf);
+    }
   });
 
   tearDownAll(() async {

@@ -20,7 +20,9 @@
   `uring.read`/`uring.write` rows with the Rust io_uring rows and the Windows
   Dart/Rust series.
 - Added `file.read.pointer8MiB` / `file.write.pointer8MiB` diagnostic rows and
-  made benchcat render only explicitly configured rows.
+  made benchcat render only explicitly configured rows. Dart and Rust now warm
+  the whole 1 GiB file before the sequential rows, removing the cold-first-row
+  artifact.
 - Benchcat now supplies its bundled OFL font catalogue; the repository
   `assets/fonts/` directory and CI `font_file` override were removed.
 

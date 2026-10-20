@@ -219,8 +219,13 @@ fn common(file: &File) -> io::Result<()> {
     fill_pattern(&mut block, 17, 3);
     let mut scratch = vec![0u8; BLOCK];
 
-    // Warm the read path once, like the C harness.
-    read_exact_at(file, &mut scratch, 0)?;
+    // Warm the whole 1 GiB file and the syscall path before measuring, matching
+    // the Dart harness; a cold first read otherwise looks like engine overhead.
+    let mut warm_offset = 0u64;
+    while warm_offset < FILE_SIZE {
+        read_exact_at(file, &mut scratch_seq, warm_offset)?;
+        warm_offset += SEQ_BLOCK as u64;
+    }
 
     // ---------------------------------------------------------- file.read.8MiB
     let mut offset = 0u64;
