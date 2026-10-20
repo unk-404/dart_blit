@@ -13,8 +13,12 @@
 
 ### Changed
 
-- The Rust benchmark is the intended replacement for the C counterpart; CI
-  wiring is intentionally left to the repository owner.
+- The Rust benchmark replaces the C counterpart in CI: Windows runs the `iocp`
+  feature, Ubuntu runs the `uring` feature, and both JSONL files are merged with
+  the Dart series before benchcat renders the chart.
+- Added a Linux Dart `UringBytesFile` benchmark; Ubuntu CI merges its QD32
+  `uring.read`/`uring.write` rows with the Rust io_uring rows and the Windows
+  Dart/Rust series.
 - Benchcat now supplies its bundled OFL font catalogue; the repository
   `assets/fonts/` directory and CI `font_file` override were removed.
 

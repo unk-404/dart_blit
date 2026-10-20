@@ -130,6 +130,79 @@ jobs:
           test -s build/web/bytes_web_example.js
 
   # ---------------------------------------------------------------------------
+  # Rust counterpart benchmarks.  Windows measures IOCP, Ubuntu measures
+  # io_uring; the chart job merges both JSONL files with the Dart series.
+  # ---------------------------------------------------------------------------
+  rust-bench:
+    name: Rust benchmark / ${{ matrix.artifact }}
+    needs: [dart, web]
+    if: github.event_name != 'pull_request' && github.ref_type == 'branch'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            feature: iocp
+            artifact: bench-rust-windows
+          - os: ubuntu-latest
+            feature: uring
+            artifact: bench-rust-linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: benchmark/rust -> target
+      - name: Run Rust benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd benchmark/rust
+          cargo run --release --features "${{ matrix.feature }}" \
+            -- bench-rust.bin > "$GITHUB_WORKSPACE/${{ matrix.artifact }}.jsonl"
+          test -s "$GITHUB_WORKSPACE/${{ matrix.artifact }}.jsonl"
+      - name: Upload Rust benchmark data
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.jsonl
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Dart io_uring benchmark on Ubuntu.  This is deliberately separate from the
+  # Rust uring benchmark: it exercises blit's UringBytesFile, not the Rust crate.
+  # ---------------------------------------------------------------------------
+  dart-uring-bench:
+    name: Dart io_uring benchmark
+    needs: [dart, web]
+    if: github.event_name != 'pull_request' && github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+      - name: Dart pub get
+        run: dart pub get
+      - name: Run Dart io_uring benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart run benchmark_test --output jsonl \
+            benchmark/uring_benchmarks_test.dart 2> bench-uring.stderr.log \
+            | grep '^{' > bench-uring.jsonl
+          test -s bench-uring.jsonl
+      - name: Upload Dart io_uring data
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-dart-uring
+          path: bench-uring.jsonl
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
   # After all tests pass: benchmark on Windows, render the README SVG, upload
   # artifacts, and (on push/manual runs) commit the updated SVG.
   #
@@ -138,7 +211,7 @@ jobs:
   # ---------------------------------------------------------------------------
   benchmark-svg:
     name: Benchmark + SVG
-    needs: [dart, web]
+    needs: [dart, web, rust-bench, dart-uring-bench]
     if: github.event_name != 'pull_request' && github.ref_type == 'branch'
     runs-on: windows-latest
     timeout-minutes: 60
@@ -149,6 +222,22 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Rust Windows benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-rust-windows
+          path: .
+      - name: Download Rust Linux benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-rust-linux
+          path: .
+      - name: Download Dart io_uring benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-dart-uring
+          path: .
 
       - name: Set up Dart
         uses: dart-lang/setup-dart@v1
@@ -234,38 +323,8 @@ jobs:
         shell: pwsh
         run: |
           Get-Content bench-core.jsonl, bench-random.jsonl, bench-iocp.jsonl, `
-            bench-bytes.jsonl | Set-Content -Encoding utf8 bench-dart.jsonl
-
-      - name: Benchmark C counterpart
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (!(Test-Path $vswhere)) {
-            throw 'vswhere.exe not found; cannot locate MSVC'
-          }
-          $vs = & $vswhere -latest -products * `
-            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            -property installationPath
-          if (!$vs) {
-            throw 'MSVC C++ tools not found'
-          }
-          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
-          $cmdLine = 'call "' + $vcvars + '" >nul && cl /nologo /O2 /std:c11 benchmark\c\blit_bench.c /Fe:bench-c.exe'
-          cmd.exe /c $cmdLine
-          if ($LASTEXITCODE -ne 0) {
-            throw "C benchmark build failed with exit code $LASTEXITCODE"
-          }
-          # cmd.exe keeps native stdout ASCII; PowerShell 5.1's > writes UTF-16.
-          cmd.exe /c 'bench-c.exe bench-c.bin > bench-c.jsonl 2> bench-c.stderr.log'
-          $code = $LASTEXITCODE
-          if ($code -ne 0) {
-            if (Test-Path bench-c.stderr.log) {
-              Write-Host '--- C benchmark stderr ---'
-              Get-Content bench-c.stderr.log
-            }
-            exit $code
-          }
-          Remove-Item bench-c.bin -Force -ErrorAction SilentlyContinue
+            bench-bytes.jsonl, bench-uring.jsonl |
+            Set-Content -Encoding utf8 bench-dart.jsonl
 
       - name: Render benchmark SVG
         # The action installs benchcat itself; inputs come from [[series]] in

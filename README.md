@@ -330,10 +330,12 @@ dart run example/bytes_example.dart
 ```
 
 Chrome tests cover OPFS and Web fuzz. CI runs Dart on Ubuntu/macOS/Windows and
-Chrome on Ubuntu. On push/manual branch runs, a Windows benchmark job renders
-the SVG with `benchcat`, uploads JSONL/SVG artifacts and commits the chart with
-`[skip ci]`. PR runs stop after tests. `workflow_dispatch` accepts
-`benchmark_gb` and `BYTES_BENCH_GB` controls local random-file benchmarks.
+Chrome on Ubuntu. On push/manual branch runs, Rust benchmarks run on Windows
+(`iocp`) and Ubuntu (`uring`), the Dart `UringBytesFile` benchmark runs on
+Ubuntu, and the Windows chart job merges all JSONL files with benchcat, uploads
+artifacts and commits the chart with `[skip ci]`. PR runs stop after tests.
+`workflow_dispatch` accepts `benchmark_gb` and `BYTES_BENCH_GB` controls local
+random-file benchmarks.
 
 ## Limitations
 
