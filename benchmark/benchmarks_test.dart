@@ -12,6 +12,7 @@
 @Timeout(Duration(minutes: 5))
 library;
 
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -19,6 +20,7 @@ import 'dart:typed_data';
 import 'package:benchmark_test/benchmark_test.dart';
 import 'package:blit/blit.dart';
 import 'package:blit/bytes_ffi.dart';
+import 'package:ffi/ffi.dart';
 import 'package:test/test.dart'
     show Timeout, group, setUp, setUpAll, tearDown, tearDownAll;
 
@@ -26,10 +28,10 @@ const int _fileSize = 1 << 30;
 const int _seqBlock = 8 << 20;
 const int _block = 4096;
 
-final Directory _benchDir =
-    Directory('${Directory.current.path}${Platform.pathSeparator}.dart_tool'
-        '${Platform.pathSeparator}bench')
-      ..createSync(recursive: true);
+final Directory _benchDir = Directory(
+  '${Directory.current.path}${Platform.pathSeparator}.dart_tool'
+  '${Platform.pathSeparator}bench',
+)..createSync(recursive: true);
 final String _path =
     '${_benchDir.path}${Platform.pathSeparator}blit_benchmarks.bin';
 final Random _rnd = Random(1234);
@@ -40,6 +42,7 @@ late final MappedRegion _readRegion;
 late final MappedRegion _writeRegion;
 late final Uint8List _readView;
 late final Uint8List _writeView;
+late final Pointer<Uint8> _seqPtr;
 int _sink = 0;
 var _seqOffset = 0;
 var _ioIndex = 0;
@@ -95,9 +98,12 @@ void main() {
     _writeRegion = _file.map(offset: 0, length: _fileSize);
     _readView = _readRegion.bytes;
     _writeView = _writeRegion.bytes;
+    _seqPtr = calloc<Uint8>(_seqBlock);
+    _seqPtr.asTypedList(_seqBlock).setAll(0, _seqBuf);
   });
 
   tearDownAll(() async {
+    calloc.free(_seqPtr);
     _readRegion.close();
     _writeRegion.close();
     _file.close();
@@ -195,6 +201,18 @@ void main() {
     _sink ^= _seqBuf[0];
   });
 
+  bench('file.read.pointer8MiB', () {
+    _file.readAtPointer(_seqOffset, _seqPtr, _seqBlock);
+    _seqOffset = (_seqOffset + _seqBlock) % _fileSize;
+    _sink ^= _seqPtr[_seqBlock - 1];
+  });
+
+  bench('file.write.pointer8MiB', () {
+    _file.writeAtPointer(_seqOffset, _seqPtr, _seqBlock);
+    _seqOffset = (_seqOffset + _seqBlock) % _fileSize;
+    _sink ^= _seqPtr[_seqBlock - 1];
+  });
+
   bench('file.read.random4K', () {
     _file.readAt(_randomOffset(), _randBuf);
     _sink ^= _randBuf[0];
@@ -222,10 +240,8 @@ void main() {
   // mmap cache before the next group starts (important on small CI runners).
   // BYTES_BENCH_MAX_WORKERS can cap the sweep on low-core CI machines.
   // -------------------------------------------------------------------------
-  final maxWorkers = int.tryParse(
-        Platform.environment['BYTES_BENCH_MAX_WORKERS'] ?? '',
-      ) ??
-      16;
+  final maxWorkers =
+      int.tryParse(Platform.environment['BYTES_BENCH_MAX_WORKERS'] ?? '') ?? 16;
   for (final workers in [1, 2, 4, 8, 16].where((w) => w <= maxWorkers)) {
     group('pool $workers', () {
       late ParallelBytesFile pool;
@@ -252,11 +268,8 @@ void main() {
         // Sequential readMany: coalescing turns every 32 adjacent 4K reads
         // into a single larger read.  The measured unit is one batch.
         bench('pool.read.sequential4K.w4', () async {
-          final base =
-              (_ioIndex++ * 4096 * 32) % (_fileSize - 4096 * 32);
-          final offsets = [
-            for (var i = 0; i < 32; i++) base + i * _block,
-          ];
+          final base = (_ioIndex++ * 4096 * 32) % (_fileSize - 4096 * 32);
+          final offsets = [for (var i = 0; i < 32; i++) base + i * _block];
           final chunks = await pool.readMany(offsets, _block);
           for (final chunk in chunks) {
             _sink ^= chunk[0];

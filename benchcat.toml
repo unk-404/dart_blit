@@ -7,7 +7,7 @@ footer = "Generated from {rows} rows"
 width = 920
 min_height = 0
 max_rows = 40
-only_matched = false
+only_matched = true
 missing = "placeholder"
 kaomoji = "(^_^)"
 
@@ -42,6 +42,22 @@ group = "File I/O"
 id = "file.write.8MiB"
 label = "Sequential write"
 note = "8 MiB blocks - 1 GiB file"
+unit = "GiB/s"
+value = "value * 8 / 1024"
+group = "File I/O"
+
+[[row]]
+id = "file.read.pointer8MiB"
+label = "Pointer read"
+note = "8 MiB into native buffer - no typed-data copy"
+unit = "GiB/s"
+value = "value * 8 / 1024"
+group = "File I/O"
+
+[[row]]
+id = "file.write.pointer8MiB"
+label = "Pointer write"
+note = "8 MiB from native buffer - no typed-data copy"
 unit = "GiB/s"
 value = "value * 8 / 1024"
 group = "File I/O"

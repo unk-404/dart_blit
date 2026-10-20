@@ -19,6 +19,8 @@
 - Added a Linux Dart `UringBytesFile` benchmark; Ubuntu CI merges its QD32
   `uring.read`/`uring.write` rows with the Rust io_uring rows and the Windows
   Dart/Rust series.
+- Added `file.read.pointer8MiB` / `file.write.pointer8MiB` diagnostic rows and
+  made benchcat render only explicitly configured rows.
 - Benchcat now supplies its bundled OFL font catalogue; the repository
   `assets/fonts/` directory and CI `font_file` override were removed.
 
