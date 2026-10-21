@@ -1,4 +1,4 @@
-﻿# blit
+# blit
 
 Zero-copy `Bytes` / `BytesMut`, async file I/O, and Web storage for Dart and
 Flutter. Native I/O is pure `dart:ffi`; Web I/O uses OPFS, IndexedDB, and Blob.
@@ -137,12 +137,12 @@ Errors use one hierarchy:
 
 ```text
 BlitException
-  鈹溾攢 BlitIOException
-  鈹溾攢 EndOfFileException
-  鈹溾攢 ClosedException
-  鈹溾攢 PermissionException
-  鈹溾攢 QuotaExceededException
-  鈹斺攢 UnsupportedException
+  - BlitIOException
+  - EndOfFileException
+  - ClosedException
+  - PermissionException
+  - QuotaExceededException
+  - UnsupportedException
 ```
 
 ## AsyncIO
@@ -209,14 +209,14 @@ OPFS is the default file backend. IndexedDB and Blob APIs are available from
 
 | Capability | Windows | Linux | macOS | Android | iOS | Web |
 |---|---|---|---|---|---|---|
-| `Bytes` / `BytesMut` / `Uint64` | 鉁?| 鉁?| 鉁?| 鉁? | 鉁? | 鉁?|
-| `AsyncFile` | 鉁?| 鉁?| 鉁?| 鈿狅笍 | 鈿狅笍 | 鉁?|
-| AsyncIO utilities | 鉁?| 鉁?| 鉁?| 鉁? | 鉁? | 鉁?|
-| Native zero-copy | 鉁?| 鉁?| 鉁?| 鈿狅笍 | 鈿狅笍 | 鈥?|
-| OPFS / IndexedDB / Blob | 鈥?| 鈥?| 鈥?| 鈥?| 鈥?| 鉁?|
+| `Bytes` / `BytesMut` / `Uint64` | yes | yes | yes | partial | partial | yes |
+| `AsyncFile` | yes | yes | yes | partial | partial | yes |
+| AsyncIO utilities | yes | yes | yes | partial | partial | yes |
+| Native zero-copy | yes | yes | yes | partial | partial | no |
+| OPFS / IndexedDB / Blob | no | no | no | no | no | yes |
 
-`*` Android/iOS are not built or run by CI; the pure-Dart core is portable, but
-mobile file paths are unverified.
+`partial` means the pure-Dart core is portable, but Android/iOS native file
+paths are not built or validated by CI.
 
 ## Performance
 
