@@ -52,6 +52,36 @@ void main() {
     }
   });
 
+  _bench('BytesVsUnsafe bytes.read4K.bytes x64', () {
+    for (var n = 0; n < 64; n++) {
+      for (var i = 0; i < 4096; i++) {
+        _sink ^= _bytes[i];
+      }
+    }
+  });
+
+  _bench('Unsafe unsafe.read4K.bytes x64', () {
+    final view = _unsafe.view(4096);
+    for (var n = 0; n < 64; n++) {
+      for (var i = 0; i < 4096; i++) {
+        _sink ^= view[i];
+      }
+    }
+  });
+
+  _bench('Unsafe unsafe.write4K.bytes x64', () {
+    final view = _unsafe.view(4096);
+    for (var n = 0; n < 64; n++) {
+      view.fillRange(0, 4096, n & 0xFF);
+      _sink ^= view[0];
+    }
+  });
+
+  _bench('Unsafe unsafe.setUint32 x4096', () {
+    for (var i = 0; i < 4096; i++) {
+      _unsafe.setUint32((_index++ * 4) & 0xFFFFC, i);
+    }
+  });
   _bench('Bytes bytes.alloc.4KiB x64', () {
     for (var i = 0; i < 64; i++) {
       final value = Bytes.fromUint8List(Uint8List(4096));

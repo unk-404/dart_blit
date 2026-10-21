@@ -4,7 +4,13 @@ Zero-copy `Bytes` / `BytesMut`, async file I/O, and Web storage for Dart and
 Flutter. Native I/O is pure `dart:ffi`; Web I/O uses OPFS, IndexedDB, and Blob.
 No C compiler, native build hooks, or native assets.
 
-![blit benchmark card](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks.svg)
+![native benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-native.svg)
+
+![memory benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-memory.svg)
+
+![AsyncFile benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-v2.svg)
+
+![Web benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-web.svg)
 
 ## Why blit
 
@@ -253,7 +259,7 @@ paths are not built or validated by CI.
 
 ## Performance
 
-The chart at the top is generated from CI benchmark results. Native engines:
+The charts at the top are generated from CI benchmark results. Native engines:
 
 - Windows: IOCP, mmap, isolate pools
 - Linux: io_uring, mmap, isolate pools
@@ -272,7 +278,7 @@ dart test -p chrome test/web
 ```
 
 CI runs Dart tests on Ubuntu/macOS/Windows, Chrome Web tests, native/Rust
-benchmarks, and renders the benchmark SVG.
+benchmarks, and renders split benchmark SVGs.
 
 ## Limitations
 
@@ -281,6 +287,8 @@ benchmarks, and renders the benchmark SVG.
 - `FileOptions.direct` requires aligned offsets and lengths.
 - Overlapping writes are serialized; do not assume a specific completion order.
 - iOS/Android native paths are not validated by CI.
+
+
 
 
 

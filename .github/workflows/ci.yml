@@ -1,7 +1,7 @@
 ﻿name: CI
 
 # Runs on every push / PR.  On push/manual branch runs, a Windows benchmark job
-# runs after all tests, renders assets/benchmarks.svg and commits it with
+# runs after all tests, renders the split benchmark SVGs and commits them with
 # [skip ci]; PR runs stop after the tests.
 on:
   push:
@@ -395,27 +395,54 @@ jobs:
             bench-v2.jsonl |
             Set-Content -Encoding utf8 bench-dart.jsonl
 
-      - name: Render benchmark SVG
-        # The action installs benchcat itself; inputs come from [[series]] in
-        # benchcat.toml, so no positional input is needed.
+      - name: Render native benchmark SVG
         uses: unk-404/benchcat@master
         with:
           format: benchmark_test
-          out: assets/benchmarks.svg
-          config: benchcat.toml
+          out: assets/benchmarks-native.svg
+          config: benchcat-native.toml
 
-      - name: Verify benchmark SVG
+      - name: Render memory benchmark SVG
+        uses: unk-404/benchcat@master
+        with:
+          format: benchmark_test
+          out: assets/benchmarks-memory.svg
+          config: benchcat-memory.toml
+
+      - name: Render AsyncFile benchmark SVG
+        uses: unk-404/benchcat@master
+        with:
+          format: benchmark_test
+          out: assets/benchmarks-v2.svg
+          config: benchcat-v2.toml
+
+      - name: Render Web benchmark SVG
+        uses: unk-404/benchcat@master
+        with:
+          format: benchmark_test
+          out: assets/benchmarks-web.svg
+          config: benchcat-web.toml
+
+      - name: Verify benchmark SVGs
         shell: pwsh
         run: |
-          if (!(Test-Path assets/benchmarks.svg)) {
-            throw 'benchcat did not write assets/benchmarks.svg'
-          }
-          if ((Get-Item assets/benchmarks.svg).Length -le 0) {
-            throw 'assets/benchmarks.svg is empty'
-          }
-          $head = Get-Content assets/benchmarks.svg -TotalCount 1
-          if ($head -notmatch '^\s*<\?xml') {
-            throw "assets/benchmarks.svg does not start with <?xml: $head"
+          $files = @(
+            'assets/benchmarks-native.svg',
+            'assets/benchmarks-memory.svg',
+            'assets/benchmarks-v2.svg',
+            'assets/benchmarks-web.svg'
+          )
+          foreach ($file in $files) {
+            if (!(Test-Path $file)) {
+              throw "benchcat did not write $file"
+            }
+            if ((Get-Item $file).Length -le 0) {
+              throw "$file is empty"
+            }
+            $head = Get-Content $file -TotalCount 1
+            if ($head -notmatch '^\s*<\?xml') {
+              throw "$file does not start with <?xml: $head"
+            }
           }
 
       - name: Upload benchmark data + SVG
@@ -426,21 +453,20 @@ jobs:
           path: |
             bench-*.jsonl
             bench-*.stderr.log
-            assets/benchmarks.svg
+            assets/benchmarks*.svg
           if-no-files-found: ignore
 
-      - name: Commit updated SVG
+      - name: Commit updated SVGs
         if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/benchmarks.svg
+          git add -A assets/benchmarks*.svg
           if (git diff --cached --quiet) {
-            Write-Host "benchmark SVG unchanged"
+            Write-Host "benchmark SVGs unchanged"
             exit 0
           }
-          git commit -m "chore(bench): update benchmark SVG [skip ci]"
+          git commit -m "chore(bench): update benchmark SVGs [skip ci]"
           git push
-
 
