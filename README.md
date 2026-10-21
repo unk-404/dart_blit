@@ -1,4 +1,4 @@
-# blit
+﻿# blit
 
 Zero-copy `Bytes` / `BytesMut` and fast random-access file I/O for Dart and
 Flutter. Native I/O is pure `dart:ffi`; Web I/O uses OPFS. No C compiler, native
@@ -8,19 +8,19 @@ build hooks or native assets.
 
 ## Why blit
 
-- **Zero-copy `Bytes`** — a `(buffer, offset, length)` view; `slice`/`sublist`
+- **Zero-copy `Bytes`** 鈥?a `(buffer, offset, length)` view; `slice`/`sublist`
   are O(1).
-- **TypedData bridge** — `Bytes.fromTypedData` and `TypedData.asBytes()` wrap
+- **TypedData bridge** 鈥?`Bytes.fromTypedData` and `TypedData.asBytes()` wrap
   `Uint8List`, `ByteData`, `Int32List`, etc. without copying. `BytesLike` is a
   small zero-copy boundary interface for other byte libraries.
-- **`BytesMut`** — growable buffer; `freeze()` / `splitTo()` / `splitOff()`
+- **`BytesMut`** 鈥?growable buffer; `freeze()` / `splitTo()` / `splitOff()`
   return shared views with copy-on-write on later mutation.
-- **Exact `Uint64`** — two 32-bit limbs; works on VM, dart2js and dart2wasm
+- **Exact `Uint64`** 鈥?two 32-bit limbs; works on VM, dart2js and dart2wasm
   without `Uint64List` or `ByteData.getUint64`.
-- **Reader/writer cursors** — `BytesReader` / `BytesWriter` provide
+- **Reader/writer cursors** 鈥?`BytesReader` / `BytesWriter` provide
   `Buf`/`BufMut`-style fixed-width access.
-- **Native file engines** — mmap, isolate pool, Windows IOCP and Linux io_uring.
-- **Web backend** — OPFS chunks + double-slot manifest, with a chunk-worker
+- **Native file engines** 鈥?mmap, isolate pool, Windows IOCP and Linux io_uring.
+- **Web backend** 鈥?OPFS chunks + double-slot manifest, with a chunk-worker
   pool and an optional cross-origin-isolated SAB ring.
 
 Runtime dependencies are `package:ffi` and the pure-Dart `package:io_uring`
@@ -189,7 +189,7 @@ is virtual: cold pages still fault from disk.
 
 ### Windows
 
-`IocpFile` exposes overlapped I/O with queue depth 1–128:
+`IocpFile` exposes overlapped I/O with queue depth 1鈥?28:
 
 ```dart
 final f = IocpFile.openSync('/tmp/data.bin', queueDepth: 32);
@@ -282,6 +282,34 @@ LRU caches hot 64 KiB chunks, and reads/writes batch all touched chunks into one
 IndexedDB transaction. `openIdbBytesFile` supports `create`, `readOnly`,
 `chunkSize`, `databaseName`, and `storeName`.
 
+### AsyncIO
+
+`package:blit/blit_io.dart` adds a self-contained AsyncIO utility layer, not another
+runtime:
+
+```dart
+import 'package:blit/blit_io.dart';
+
+final reader = BufReader(AsyncFileReader(file), capacity: 64 * 1024);
+final line = await readLine(reader);
+
+final dst = BytesMutAsyncWriter();
+await reader.copyTo(dst);
+```
+
+Core pieces:
+
+- `ReadBuf` / `IoSlice`
+- `AsyncRead` / `AsyncWrite` / `AsyncBufRead`
+- `readExact`, `readToEnd`, `readU8..U64`, `writeAll`, `writeUint*`, `copy`
+- `BufReader`, `BufWriter`, `readLine`, `readerStream`
+- `AsyncFileReader` / `AsyncFileWriter` over any `BytesFile`
+- memory adapters over `Uint8List`, `Bytes`, and `BytesMut`
+
+`ReadBuf` writes into its `unfilled` view and then advances, so native-backed
+typed-data views can be used without an extra copy. `readToEnd` accumulates in
+`BytesMut` and freezes once.
+
 ### Blob backend
 
 An immutable `Blob` or `File` can be exposed as a read-only `BytesFile`:
@@ -305,15 +333,15 @@ delete throw `StateError`; `flush` is a no-op.
 
 | Capability | Windows | Linux | macOS | Android | iOS | Web |
 |---|---|---|---|---|---|---|
-| `Bytes` / `BytesMut` / `Uint64` | ✅ | ✅ | ✅ | ✅* | ✅* | ✅ |
-| `BytesFile` (`dart:io`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
-| mmap (`bytes_ffi.dart`) | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
-| `IocpFile` | ✅ | — | — | — | — | — |
-| `UringBytesFile` | — | ✅ | — | — | — | — |
-| `ParallelBytesFile` | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
-| OPFS backend | — | — | — | — | — | ✅ |
-| IndexedDB backend | — | — | — | — | — | ✅ |
-| Blob backend (read-only) | — | — | — | — | — | ✅ |
+| `Bytes` / `BytesMut` / `Uint64` | 鉁?| 鉁?| 鉁?| 鉁? | 鉁? | 鉁?|
+| `BytesFile` (`dart:io`) | 鉁?| 鉁?| 鉁?| 鈿狅笍 | 鈿狅笍 | 鈥?|
+| mmap (`bytes_ffi.dart`) | 鉁?| 鉁?| 鉁?| 鈿狅笍 | 鈿狅笍 | 鈥?|
+| `IocpFile` | 鉁?| 鈥?| 鈥?| 鈥?| 鈥?| 鈥?|
+| `UringBytesFile` | 鈥?| 鉁?| 鈥?| 鈥?| 鈥?| 鈥?|
+| `ParallelBytesFile` | 鉁?| 鉁?| 鉁?| 鈿狅笍 | 鈿狅笍 | 鈥?|
+| OPFS backend | 鈥?| 鈥?| 鈥?| 鈥?| 鈥?| 鉁?|
+| IndexedDB backend | 鈥?| 鈥?| 鈥?| 鈥?| 鈥?| 鉁?|
+| Blob backend (read-only) | 鈥?| 鈥?| 鈥?| 鈥?| 鈥?| 鉁?|
 
 `*` Android/iOS are not built or run by CI; the pure-Dart core is portable, but
 mobile file paths are unverified. CI covers Dart on Ubuntu/macOS/Windows and
@@ -397,3 +425,4 @@ random-file benchmarks.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+

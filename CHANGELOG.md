@@ -1,44 +1,35 @@
 # Changelog
 
+## 0.1.7
+
+### Added
+
+- AsyncIO utilities in `package:blit/blit_io.dart`: `ReadBuf`, `IoSlice`,
+  `AsyncRead`, `AsyncWrite`, `AsyncBufRead`, `AsyncReadExt`, `AsyncWriteExt`.
+- `BufReader`, `BufWriter`, `readLine`, `readerStream`, `copy`.
+- `Uint8ListReader`, `BytesAsyncReader`, `Uint8ListWriter`,
+  `BytesMutAsyncWriter`, `AsyncFileReader`, `AsyncFileWriter`.
+
 ## 0.1.6
 
 ### Added
 
-- IndexedDB `BytesFile` backend (`openIdbBytesFile`): shared database/object
-  store, base64 path key prefixes, sparse 64 KiB chunk records, batched
-  transactions, and a 128-chunk LRU cache. It does not create a table per file.
-- IndexedDB key/metadata unit tests and Chrome end-to-end tests covering
-  chunk-crossing writes, sparse reads, truncation, reopen, read-only mode, and
-  multiple logical files sharing one store.
-- Read-only Web Blob backend (`openBlobBytesFile`): `Blob`/`File` becomes a
-  `BytesFile` with range reads, EOF clamping, and transparent whole-Blob caching
-  up to `cacheLimit` (8 MiB default). Writes/truncate/delete are rejected.
+- IndexedDB backend: `openIdbBytesFile`.
+- Read-only Blob backend: `openBlobBytesFile`.
 
 ## 0.1.5
 
 ### Added
 
-- `ReadFast`: automatic read-engine selection. Windows uses a per-worker
-  mmap-backed isolate pool up to 1 GiB and an IOCP-backed pool above it; Linux
-  uses io_uring above the mmap threshold and an mmap pool below it; unsupported
-  io_uring kernels fall back to the pool.
-- `benchmark/rust`: Rust counterpart benchmark with `memmap2` common rows and
-  feature-gated `iocp` / `uring` QD32 engine rows.
+- `ReadFast`.
+- `benchmark/rust` with `iocp` / `uring` features.
+- `file.read.pointer8MiB` / `file.write.pointer8MiB` benchmark rows.
 
 ### Changed
 
-- The Rust benchmark replaces the C counterpart in CI: Windows runs the `iocp`
-  feature, Ubuntu runs the `uring` feature, and both JSONL files are merged with
-  the Dart series before benchcat renders the chart.
-- Added a Linux Dart `UringBytesFile` benchmark; Ubuntu CI merges its QD32
-  `uring.read`/`uring.write` rows with the Rust io_uring rows and the Windows
-  Dart/Rust series.
-- Added `file.read.pointer8MiB` / `file.write.pointer8MiB` diagnostic rows and
-  made benchcat render only explicitly configured rows. Dart and Rust now warm
-  the whole 1 GiB file before the sequential rows, removing the cold-first-row
-  artifact.
-- Benchcat now supplies its bundled OFL font catalogue; the repository
-  `assets/fonts/` directory and CI `font_file` override were removed.
+- Rust benchmark replaces the C benchmark in CI.
+- Added Linux `UringBytesFile` benchmarks.
+- Benchmark chart uses `benchcat` and bundled fonts.
 
 ## 0.1.4
 
@@ -124,7 +115,7 @@
   `workers[i % N]` (default 4), keeps the manifest single-writer, and caches
   each chunk handle in its owning worker.
 - Optional Web SAB ring for small `read`/`write` calls when
-  `crossOriginIsolated` and `Atomics.waitAsync` are available: 8 × 64 KiB
+  `crossOriginIsolated` and `Atomics.waitAsync` are available: 8 脳 64 KiB
   slots, `Atomics` wakeups, postMessage fallback for larger payloads and
   non-isolated pages.
 - Benchmark SVG rendering now uses `bench-svg` (`bench-svg.toml` + the
@@ -147,7 +138,7 @@ First development release.
 - `BytesFile`/`SyncBytesFile` and the native `dart:io` backend.
 - Native mmap engine: Windows `CreateFileMappingW`, POSIX `mmap`/`pread`;
   sparse files, zero-copy windows, zeroize, read-only mappings.
-- Windows `IocpFile`: overlapped I/O + IOCP, QD 1–128 batch reads/writes.
+- Windows `IocpFile`: overlapped I/O + IOCP, QD 1鈥?28 batch reads/writes.
 - `MappedRegion.prefetch()` / `discard()`: Windows `PrefetchVirtualMemory`
   (discard is a no-op for file-backed maps), POSIX `madvise(MADV_WILLNEED /
   MADV_DONTNEED)`.
@@ -174,3 +165,4 @@ First development release.
 - `putUint64` little-endian limb encoding and atomic failure on short buffers.
 - `ParallelBytesFile` barrier deadlock when queued work already existed.
 - Windows read-only mapping `zeroize` guard and empty-file `map` consistency.
+
