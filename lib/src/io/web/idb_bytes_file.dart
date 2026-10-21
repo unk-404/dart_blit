@@ -1,4 +1,4 @@
-/// IndexedDB-backed random-access file.
+﻿/// IndexedDB-backed random-access file.
 ///
 /// This is *not* an IndexedDB wrapper API. It maps the existing [BytesFile]
 /// operations onto a shared object store:
@@ -122,6 +122,9 @@ final class WebIndexedDbBytesFile implements BytesFile {
 
   @override
   bool get isClosed => _closed;
+
+  @override
+  bool get supportsConcurrentReads => true;
 
   @override
   Future<int> get length async {
@@ -606,3 +609,5 @@ Future<void> shutdownIdbBackend() async {
   }
   _IdbStore._instances.clear();
 }
+
+

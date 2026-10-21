@@ -1,4 +1,4 @@
-/// Async random-access file abstraction shared by native and web backends.
+﻿/// Async random-access file abstraction shared by native and web backends.
 library;
 
 import 'dart:typed_data';
@@ -33,6 +33,9 @@ abstract interface class BytesFile {
   Future<void> delete();
 
   bool get isClosed;
+
+  /// Whether concurrent positional reads are safe.
+  bool get supportsConcurrentReads;
 }
 
 /// Native-only synchronous companion.  Not available on the web.
@@ -51,3 +54,4 @@ abstract interface class SyncBytesFile implements BytesFile {
 
   void closeSync();
 }
+

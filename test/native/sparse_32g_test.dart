@@ -1,4 +1,4 @@
-/// 32 GiB sparse-file test: a 4 KiB write at the 30 GiB offset must not
+﻿/// 32 GiB sparse-file test: a 4 KiB write at the 30 GiB offset must not
 /// zero-fill the 30 GiB gap.
 ///
 /// This test is skipped by default because it creates a 32 GiB logical file.
@@ -16,7 +16,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
 import 'package:test/test.dart';
 
 const int _gib = 1024 * 1024 * 1024;
@@ -139,3 +139,4 @@ void main() {
     timeout: const Timeout(Duration(minutes: 5)),
   );
 }
+

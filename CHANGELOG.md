@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+
+- `AsyncFile`, `BlitFile`, `FileOptions`, and the `BlitException` hierarchy.
+- `blit` simple API: `open`, `read`, `write`, `append`, `copy`, `exists`, `delete`.
+- `NativeBuffer`, `NativeBufferPool`, and `NativeMmapFile` in `package:blit/blit_native.dart`.
+- `readMany`/`writeMany` coalesce contiguous requests; clustered writes use one read-modify-write; readMany uses concurrent backends.
+- `AsyncFileNative` pooled read/write via `NativeBuffer`.
+- Web `openIndexedDb`; OPFS falls back to IndexedDB.
+- Cooperative `CancelToken`; `exclusive` create; `flushWith`.
+- `close`/`delete` drain pending operations before closing.
+- `direct` mmap selection and `PerformanceProfile` worker tuning.
+- Split public entries: `blit.dart`, `blit_io.dart`, `blit_buffer.dart`, `blit_web.dart`, `blit_native.dart`.
+
 ## 0.1.7
 
 ### Added
@@ -115,7 +130,7 @@
   `workers[i % N]` (default 4), keeps the manifest single-writer, and caches
   each chunk handle in its owning worker.
 - Optional Web SAB ring for small `read`/`write` calls when
-  `crossOriginIsolated` and `Atomics.waitAsync` are available: 8 脳 64 KiB
+  `crossOriginIsolated` and `Atomics.waitAsync` are available: 8 闁?64 KiB
   slots, `Atomics` wakeups, postMessage fallback for larger payloads and
   non-isolated pages.
 - Benchmark SVG rendering now uses `bench-svg` (`bench-svg.toml` + the
@@ -138,7 +153,7 @@ First development release.
 - `BytesFile`/`SyncBytesFile` and the native `dart:io` backend.
 - Native mmap engine: Windows `CreateFileMappingW`, POSIX `mmap`/`pread`;
   sparse files, zero-copy windows, zeroize, read-only mappings.
-- Windows `IocpFile`: overlapped I/O + IOCP, QD 1鈥?28 batch reads/writes.
+- Windows `IocpFile`: overlapped I/O + IOCP, QD 1闂?28 batch reads/writes.
 - `MappedRegion.prefetch()` / `discard()`: Windows `PrefetchVirtualMemory`
   (discard is a no-op for file-backed maps), POSIX `madvise(MADV_WILLNEED /
   MADV_DONTNEED)`.
@@ -165,4 +180,7 @@ First development release.
 - `putUint64` little-endian limb encoding and atomic failure on short buffers.
 - `ParallelBytesFile` barrier deadlock when queued work already existed.
 - Windows read-only mapping `zeroize` guard and empty-file `map` consistency.
+
+
+
 

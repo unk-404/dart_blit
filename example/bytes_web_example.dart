@@ -1,7 +1,7 @@
-// Web-safe example: compiles with `dart compile js` and runs in any browser.
+﻿// Web-safe example: compiles with `dart compile js` and runs in any browser.
 //
-// This file must not import `dart:io` or `package:blit/bytes_ffi.dart`;
-// only the core library (`package:blit/bytes.dart`) is portable to the web.
+// This file must not import `dart:ffi` or native-only `blit_native.dart`;
+// only `package:blit/blit.dart` and `package:blit/blit_buffer.dart` are web-portable.
 import 'package:blit/bytes.dart';
 
 void main() {
@@ -26,3 +26,4 @@ void main() {
 }
 
 String _asString(Bytes bytes) => String.fromCharCodes(bytes.asUint8List());
+

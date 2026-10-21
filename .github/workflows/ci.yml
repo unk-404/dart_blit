@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 # Runs on every push / PR.  On push/manual branch runs, a Windows benchmark job
 # runs after all tests, renders assets/benchmarks.svg and commits it with
@@ -338,6 +338,22 @@ jobs:
             exit $code
           }
 
+      - name: Benchmark v0.2 AsyncFile
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/v2_benchmarks_test.dart 2> bench-v2.stderr.log
+          $code = $LASTEXITCODE
+          $output | Where-Object { $_ -match '^\s*\{' } |
+            Set-Content -Encoding utf8 bench-v2.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) {
+            if (Test-Path bench-v2.stderr.log) {
+              Write-Host '--- v2 benchmark stderr ---'
+              Get-Content bench-v2.stderr.log
+            }
+            exit $code
+          }
       - name: Benchmark core bytes
         shell: pwsh
         run: |
@@ -359,7 +375,8 @@ jobs:
         shell: pwsh
         run: |
           Get-Content bench-core.jsonl, bench-random.jsonl, bench-iocp.jsonl, `
-            bench-bytes.jsonl, bench-uring.jsonl, bench-idb.jsonl |
+            bench-bytes.jsonl, bench-uring.jsonl, bench-idb.jsonl, `
+            bench-v2.jsonl |
             Set-Content -Encoding utf8 bench-dart.jsonl
 
       - name: Render benchmark SVG
@@ -409,3 +426,4 @@ jobs:
           }
           git commit -m "chore(bench): update benchmark SVG [skip ci]"
           git push
+

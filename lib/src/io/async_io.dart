@@ -1,4 +1,4 @@
-/// Self-contained asynchronous I/O utilities.
+﻿/// Self-contained asynchronous I/O utilities.
 ///
 /// This layer is transport-agnostic: it composes over existing async backends
 /// and Futures, and does not create an executor or event loop. It is web-safe
@@ -13,7 +13,6 @@ import 'dart:typed_data';
 import '../bytes.dart';
 import '../bytes_mut.dart';
 import '../u64/uint64.dart';
-import 'bytes_file.dart';
 
 /// Result of one async read.
 final class ReadResult {
@@ -449,54 +448,6 @@ final class BufWriter<W extends AsyncWrite> implements AsyncWrite {
     await _drain();
     await inner.flush();
   }
-}
-
-/// Reads a `BytesFile` sequentially from [start] to [end].
-final class AsyncFileReader implements AsyncRead {
-  AsyncFileReader(this.file, {this.start = 0, this.end, int? position})
-    : _position = position ?? start;
-
-  final BytesFile file;
-  final int start;
-  final int? end;
-  int _position;
-
-  @override
-  Future<ReadResult> readInto(ReadBuf dst) async {
-    if (dst.remaining == 0) return const ReadResult(0);
-    if (end != null && _position >= end!) return const ReadResult(0, eof: true);
-    final want = end == null
-        ? dst.remaining
-        : (end! - _position).clamp(0, dst.remaining);
-    final n = await file.readAt(_position, dst.unfilled, start: 0, end: want);
-    dst.advance(n);
-    _position += n;
-    return ReadResult(n, eof: n == 0 || (end != null && _position >= end!));
-  }
-}
-
-/// Writes to a `BytesFile` sequentially from [start].
-final class AsyncFileWriter implements AsyncWrite {
-  AsyncFileWriter(this.file, {this.start = 0}) : _position = start;
-
-  final BytesFile file;
-  final int start;
-  int _position;
-
-  @override
-  Future<int> writeFrom(IoSlice src) async {
-    final n = await file.writeAt(
-      _position,
-      src.bytes,
-      start: src.start,
-      end: src.end,
-    );
-    _position += n;
-    return n;
-  }
-
-  @override
-  Future<void> flush() => file.flush();
 }
 
 /// Turns an [AsyncRead] into a chunked stream.

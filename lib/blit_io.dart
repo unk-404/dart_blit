@@ -1,10 +1,9 @@
-/// Async I/O utilities for blit.
-///
-/// Async I/O traits and helpers over `BytesFile`, `Bytes`,
-/// `BytesMut`, and `Uint8List`. No runtime/executor is created.
+/// Standardized async I/O API for blit.
 library;
 
-export 'bytes.dart';
+export 'blit_buffer.dart';
 export 'src/io/async_io.dart';
-export 'src/io/bytes_file.dart';
-export 'src/io/open.dart';
+export 'src/v2/async_file.dart';
+export 'src/v2/cancel.dart';
+export 'src/v2/errors.dart';
+export 'src/v2/options.dart';

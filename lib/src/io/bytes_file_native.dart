@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -170,5 +170,10 @@ final class NativeBytesFile implements SyncBytesFile {
   bool get isClosed => _closed;
 
   @override
+  bool get supportsConcurrentReads => false;
+
+  @override
   String toString() => 'NativeBytesFile($path, readOnly: $readOnly)';
 }
+
+

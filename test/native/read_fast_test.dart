@@ -1,10 +1,10 @@
-@TestOn('vm')
+﻿@TestOn('vm')
 library;
 
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -60,3 +60,4 @@ void main() {
     }
   });
 }
+

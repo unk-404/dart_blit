@@ -1,4 +1,4 @@
-/// Read-only random access over a Web `Blob` / `File`.
+﻿/// Read-only random access over a Web `Blob` / `File`.
 ///
 /// Blobs are immutable, so this backend exposes only the read side of
 /// [BytesFile]. Small blobs (up to [cacheLimit]) are materialized once and then
@@ -102,6 +102,9 @@ final class WebBlobBytesFile implements BytesFile {
 
   @override
   bool get isClosed => _closed;
+
+  @override
+  bool get supportsConcurrentReads => true;
 }
 
 /// Opens a read-only [BytesFile] over a Web Blob/File.
@@ -115,3 +118,5 @@ Future<BytesFile> openBlobBytesFile(
   JSObject blob, {
   int cacheLimit = 8 << 20,
 }) => openBlobBytesFileTyped(blob, cacheLimit: cacheLimit);
+
+

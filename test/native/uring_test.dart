@@ -1,10 +1,10 @@
-@TestOn('linux')
+﻿@TestOn('linux')
 library;
 
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
 import 'package:test/test.dart';
 
 Uint8List _pattern(int n, {int seed = 0}) {
@@ -123,3 +123,4 @@ void main() {
     }
   });
 }
+

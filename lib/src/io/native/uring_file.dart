@@ -1,4 +1,4 @@
-/// Linux `io_uring` file backend, built on the pure-Dart `io_uring` package.
+﻿/// Linux `io_uring` file backend, built on the pure-Dart `io_uring` package.
 ///
 /// Linux-only.  `io_uring` uses raw syscalls + mmap; there is no C shim,
 /// `liburing` dependency or native asset.
@@ -389,6 +389,9 @@ final class UringBytesFile implements BytesFile {
   @override
   bool get isClosed => _closed;
 
+  @override
+  bool get supportsConcurrentReads => true;
+
   void _checkOpen() {
     if (_closed) throw StateError('File is closed: $path');
   }
@@ -421,3 +424,4 @@ Future<UringBytesFile> openUringBytesFile(
   entries: entries,
   sharedLoop: sharedLoop,
 );
+

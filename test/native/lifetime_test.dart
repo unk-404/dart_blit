@@ -1,4 +1,4 @@
-/// Lifecycle, ownership and error-path tests for the native mmap engine.
+﻿/// Lifecycle, ownership and error-path tests for the native mmap engine.
 ///
 /// Runs on Windows and POSIX.  Tests that depend on a backend-specific detail
 /// are annotated inline.
@@ -8,8 +8,8 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:blit/bytes.dart';
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
+import 'package:blit/src/io/open.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -393,3 +393,6 @@ void main() {
     });
   });
 }
+
+
+

@@ -1,4 +1,4 @@
-// End-to-end browser tests for the Web (OPFS) backend.
+﻿// End-to-end browser tests for the Web (OPFS) backend.
 //
 // Run with:  dart test -p chrome test/web
 //
@@ -10,7 +10,6 @@ library;
 
 import 'dart:typed_data';
 
-import 'package:blit/bytes.dart';
 import 'package:blit/src/io/web/web.dart';
 import 'package:test/test.dart';
 
@@ -410,20 +409,6 @@ void main() {
     await reopened.close();
   });
 
-  test('public openBytesFile routes to the OPFS backend', () async {
-    final path = _newPath('public');
-    final BytesFile file = await openBytesFile(path);
-    addTearDown(() async {
-      if (!file.isClosed) await file.close();
-      await deleteOpfsFile(path);
-    });
-    expect(await file.writeAt(0, Uint8List.fromList([4, 5, 6])), 3);
-    expect(await file.length, 3);
-    final out = Uint8List(3);
-    expect(await file.readAt(0, out), 3);
-    expect(out, [4, 5, 6]);
-    await file.close();
-  });
 
   test('reopen keeps the chunk size recorded in the manifest', () async {
     final path = _newPath('chunksize');

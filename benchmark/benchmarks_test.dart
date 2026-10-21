@@ -1,4 +1,4 @@
-// Core + 1 GiB file + isolate-pool benchmarks, using package:benchmark_test.
+﻿// Core + 1 GiB file + isolate-pool benchmarks, using package:benchmark_test.
 //
 // Run:
 //   dart run benchmark_test --compile jit,aot benchmark/benchmarks_test.dart
@@ -19,7 +19,7 @@ import 'dart:typed_data';
 
 import 'package:benchmark_test/benchmark_test.dart';
 import 'package:blit/blit.dart';
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
 import 'package:ffi/ffi.dart';
 import 'package:test/test.dart'
     show Timeout, group, setUp, setUpAll, tearDown, tearDownAll;
@@ -285,3 +285,4 @@ void main() {
     });
   }
 }
+

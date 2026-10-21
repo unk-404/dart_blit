@@ -1,4 +1,4 @@
-/// Concurrency, barrier and durability stress tests for [ParallelBytesFile].
+﻿/// Concurrency, barrier and durability stress tests for [ParallelBytesFile].
 ///
 /// The default workload is 100k 4 KiB random reads/writes per round over a
 /// small working set, for two rounds, using real temp files (no mocks).  Set
@@ -12,7 +12,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
 import 'package:test/test.dart';
 
 const int _blockSize = 4096;
@@ -428,3 +428,4 @@ void main() {
     });
   });
 }
+

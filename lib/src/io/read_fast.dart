@@ -1,4 +1,4 @@
-/// Automatic native read engine selection.
+﻿/// Automatic native read engine selection.
 ///
 /// [ReadFast] is a read-optimized [BytesFile] facade.  It chooses a backend
 /// from the platform and file size, then keeps the chosen engine visible for
@@ -82,6 +82,9 @@ final class ReadFast implements BytesFile {
 
   @override
   bool get isClosed => _backend.isClosed;
+
+  @override
+  bool get supportsConcurrentReads => _backend.supportsConcurrentReads;
 
   /// Batched read when the selected backend supports it.
   ///
@@ -177,3 +180,6 @@ final class ReadFast implements BytesFile {
     );
   }
 }
+
+
+

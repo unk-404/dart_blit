@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:blit/blit_io.dart';
@@ -115,28 +115,28 @@ void main() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     });
 
-    test('sequential read and write over BytesFile', () async {
+    test('sequential read and write over AsyncFile', () async {
       final data = Uint8List.fromList([
         for (var i = 0; i < 4096; i++) i & 0xFF,
       ]);
       File(path).writeAsBytesSync(data);
 
-      final readerFile = await openBytesFile(
+      final reader = await AsyncFile.open(
         path,
-        create: false,
-        readOnly: true,
+        options: const FileOptions(mode: FileMode.read, create: false),
       );
-      final reader = AsyncFileReader(readerFile);
       final roundtrip = await reader.readToEnd();
       expect(roundtrip.toUint8List(), data);
-      await readerFile.close();
+      await reader.close();
 
       final target = '${dir.path}${Platform.pathSeparator}out.bin';
-      final writerFile = await openBytesFile(target);
-      final writer = AsyncFileWriter(writerFile);
+      final writer = await AsyncFile.open(
+        target,
+        options: const FileOptions(mode: FileMode.readWrite, truncate: true),
+      );
       await writer.writeAll(IoSlice(data));
       await writer.flush();
-      await writerFile.close();
+      await writer.close();
       expect(File(target).readAsBytesSync(), data);
     });
   });

@@ -1,4 +1,4 @@
-/// Automatic isolate pool for native random-access I/O.
+﻿/// Automatic isolate pool for native random-access I/O.
 ///
 /// Each worker isolate owns its own [MmapFile] handle; the pool dispatches
 /// independent `readAt`/`writeAt` requests to idle workers and applies
@@ -562,6 +562,9 @@ final class ParallelBytesFile implements BytesFile {
   @override
   bool get isClosed => _closed;
 
+  @override
+  bool get supportsConcurrentReads => true;
+
   int get activeWorkers => _workers.where((w) => !w.failed).length;
 
   int get pending => _queue.length + _inflight.length;
@@ -851,3 +854,4 @@ void _workerMain(List<Object> args) {
     }
   });
 }
+

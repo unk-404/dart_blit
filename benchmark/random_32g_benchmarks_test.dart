@@ -1,4 +1,4 @@
-// 32 GiB (or BYTES_BENCH_GB) random 4K benchmark, package:benchmark_test.
+﻿// 32 GiB (or BYTES_BENCH_GB) random 4K benchmark, package:benchmark_test.
 //
 // Run:
 //   dart run benchmark_test benchmark/random_32g_benchmarks_test.dart
@@ -16,7 +16,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:benchmark_test/benchmark_test.dart';
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
 import 'package:test/test.dart' show Timeout, setUpAll, tearDownAll;
 
 final int _size =
@@ -107,3 +107,4 @@ void main() {
     _sink ^= _buf[0];
   }, timeout: timeout);
 }
+

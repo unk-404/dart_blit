@@ -1,4 +1,4 @@
-// Linux-only Dart io_uring benchmark.
+﻿// Linux-only Dart io_uring benchmark.
 //
 // Run on Ubuntu:
 //   dart run benchmark_test --output jsonl benchmark/uring_benchmarks_test.dart
@@ -14,7 +14,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:benchmark_test/benchmark_test.dart';
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
 import 'package:test/test.dart'
     show Timeout, setUpAll, tearDownAll;
 
@@ -97,3 +97,4 @@ void main() {
 
 List<int> _patternBlock(int seed) =>
     [for (var i = 0; i < _block; i++) (seed + i * 17) & 0xFF];
+

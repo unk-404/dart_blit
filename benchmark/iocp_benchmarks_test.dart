@@ -1,4 +1,4 @@
-// Windows IOCP queue-depth sweep, package:benchmark_test.
+﻿// Windows IOCP queue-depth sweep, package:benchmark_test.
 //
 // Run: dart run benchmark_test benchmark/iocp_benchmarks_test.dart
 //
@@ -12,7 +12,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:benchmark_test/benchmark_test.dart';
-import 'package:blit/bytes_ffi.dart';
+import 'package:blit/src/io/native/native.dart';
 import 'package:test/test.dart'
     show Timeout, setUpAll, tearDownAll, test;
 
@@ -98,3 +98,4 @@ void main() {
     }, timeout: timeout);
   }
 }
+

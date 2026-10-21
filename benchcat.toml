@@ -1,4 +1,4 @@
-# Rendered by benchcat (https://github.com/unk-404/benchcat).
+﻿# Rendered by benchcat (https://github.com/unk-404/benchcat).
 # One chart: native I/O (Dart vs Rust) plus core Bytes (Dart-only placeholder).
 [render]
 title = "blit vs Rust"
@@ -154,6 +154,30 @@ unit = "IOPS"
 value = "value * 32"
 group = "io_uring"
 
+# v0.2 AsyncFile rows.
+[[row]]
+id = "v2.read.8MiB"
+label = "AsyncFile read"
+note = "v0.2 - 8 MiB - ReadFast policy"
+unit = "MiB/s"
+value = "value * 32"
+group = "v0.2 AsyncFile"
+
+[[row]]
+id = "v2.write.8MiB"
+label = "AsyncFile write"
+note = "v0.2 - 8 MiB - native backend"
+unit = "MiB/s"
+value = "value * 32"
+group = "v0.2 AsyncFile"
+
+[[row]]
+id = "v2.nativePointer.read8MiB"
+label = "AsyncFile native pointer read"
+note = "v0.2 - 8 MiB - zero-copy target"
+unit = "MiB/s"
+value = "value * 32"
+group = "v0.2 AsyncFile"
 # Dart IndexedDB backend (browser-only, no native comparison).
 [[row]]
 id = "idb.read.random4K"
@@ -304,4 +328,5 @@ note = "1 byte - fixed destination"
 unit = "MiB/s"
 value = "value * 4096 / 1048576"
 group = "Reader/Writer"
+
 

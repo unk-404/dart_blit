@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:blit/bytes.dart';
+import 'package:blit/blit.dart';
 
 Future<void> main() async {
   // Zero-copy view and O(1) slicing.
@@ -22,12 +22,11 @@ Future<void> main() async {
   // Native random-access file in the OS temp directory.
   final dir = await Directory.systemTemp.createTemp('blit_example_');
   final path = '${dir.path}${Platform.pathSeparator}demo.bin';
-  final file = await openBytesFile(path);
+  final file = await blit.open(path);
   await file.writeAt(0, Uint8List.fromList([1, 2, 3, 4]));
   await file.append(Uint8List.fromList([5, 6]));
-  final out = Uint8List(6);
-  await file.readAt(0, out);
-  print('file length = ${await file.length}, bytes = $out');
+  final out = await file.readAt(0, 6);
+  print('file length = ${await file.length}, bytes = ${out.toUint8List()}');
   await file.delete();
   await dir.delete();
 
