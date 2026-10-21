@@ -122,7 +122,6 @@ final class _Page {
   final ByteData data;
   final int reserved;
   int capacity = 0;
-  int used = 0;
   int freeHead = 0;
 }
 
@@ -133,12 +132,34 @@ final class BlitAllocator {
   final Map<int, _Page> _pageBySlice = {};
   final List<_Page> _pages = [];
   final Set<int> _huge = {};
+  int _cachedAddress = 0;
+  int _cachedCapacity = 0;
+  int _activeAddress = 0;
+  int _activeCapacity = 0;
 
   int get pageCount => _pages.length;
 
   int get residentBytes => _pages.fold(0, (sum, page) => sum + page.pageSize);
 
+  // mimalloc keeps a page-local free list; this single-slot cache is the same
+  // idea for the common immediate alloc/free pattern. It avoids the page map
+  // entirely until a second live allocation or a non-LIFO free appears.
+  @pragma('vm:prefer-inline')
   int alloc(int size) {
+    if (size <= _cachedCapacity) {
+      final cached = _cachedAddress;
+      if (cached != 0) {
+        _cachedAddress = 0;
+        _activeAddress = cached;
+        _activeCapacity = _cachedCapacity;
+        return cached;
+      }
+    }
+    return _allocSlow(size);
+  }
+
+  int _allocSlow(int requested) {
+    var size = requested;
     if (size <= 0) size = 1;
     final bin = _binFor(size);
     if (bin == _hugeBin) {
@@ -163,14 +184,26 @@ final class BlitAllocator {
     }
     if (address == 0) throw StateError('allocator failed');
     page.freeHead = _readAddress(page, address);
-    page.used++;
+    _activeAddress = address;
+    _activeCapacity = _binSizes[bin];
     if (page.freeHead == 0 && page.capacity >= page.reserved) {
       _current[bin] = null;
     }
     return address;
   }
 
+  @pragma('vm:prefer-inline')
   void free(int address) {
+    if (address == _activeAddress) {
+      _cachedAddress = address;
+      _cachedCapacity = _activeCapacity;
+      _activeAddress = 0;
+      return;
+    }
+    _freeSlow(address);
+  }
+
+  void _freeSlow(int address) {
     final page = _pageBySlice[address >> _sliceShift];
     if (page == null) {
       if (_huge.remove(address)) {
@@ -180,7 +213,6 @@ final class BlitAllocator {
     }
     _writeAddress(page, address, page.freeHead);
     page.freeHead = address;
-    page.used--;
     _current[page.bin] = page;
   }
 
@@ -189,6 +221,10 @@ final class BlitAllocator {
       malloc.free(Pointer<Uint8>.fromAddress(address));
     }
     _huge.clear();
+    _cachedAddress = 0;
+    _cachedCapacity = 0;
+    _activeAddress = 0;
+    _activeCapacity = 0;
     for (final page in _pages) {
       malloc.free(Pointer<Uint8>.fromAddress(page.raw));
     }

@@ -13,6 +13,8 @@
 - `BlitAllocator`: 73-bin 12.5% classes, 64 KiB/512 KiB/4 MiB pages,
   lazy page allocation and 8 KiB page extension; not wired into `UnsafeBytes`.
 - No 64 MiB allocator arena is reserved up front.
+- Single-slot local free-list cache: 64 B and 4 KiB immediate alloc/free
+  no longer touch the page map.
 - `DartAllocator` benchmark baseline.
 - `AddressIo` direct native path for `readAtUnsafe` / `writeAtUnsafe`.
 - Batch memory operations: `unsafeCopy`, `unsafeMove`, `unsafeFill`,
@@ -217,6 +219,7 @@ First development release.
 - `putUint64` little-endian limb encoding and atomic failure on short buffers.
 - `ParallelBytesFile` barrier deadlock when queued work already existed.
 - Windows read-only mapping `zeroize` guard and empty-file `map` consistency.
+
 
 
 
