@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:blit/blit_io.dart';
+import 'package:blit/unsafe.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -25,6 +26,18 @@ void main() {
       expect(view.length, 16);
     } finally {
       bytes.free();
+    }
+  });
+
+  test('raw int API', () {
+    final address = unsafeAlloc(8);
+    try {
+      unsafeWriteInt32(address, 0, 0x11223344);
+      expect(unsafeReadInt32(address, 0), 0x11223344);
+      unsafeWriteUint16(address, 4, 0xABCD);
+      expect(unsafeReadUint16(address, 4), 0xABCD);
+    } finally {
+      unsafeFree(address);
     }
   });
 

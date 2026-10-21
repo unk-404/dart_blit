@@ -10,7 +10,7 @@ import 'cancel.dart';
 import 'errors.dart';
 import 'open_backend.dart';
 import 'options.dart';
-import 'unsafe_bytes.dart';
+import '../unsafe/bytes.dart';
 
 /// One read request for [AsyncFile.readMany].
 final class ReadRequest {

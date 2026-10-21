@@ -1,4 +1,4 @@
-﻿/// Core byte buffers.
+/// Core byte buffers.
 library;
 
 export 'src/bytes.dart';
@@ -8,5 +8,3 @@ export 'src/bytes_reader.dart';
 export 'src/bytes_writer.dart';
 export 'src/compat.dart';
 export 'src/u64/uint64.dart';
-export 'src/v2/unsafe_bytes.dart';
-

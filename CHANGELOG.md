@@ -6,6 +6,7 @@
 
 - `UnsafeBytes.alloc` / `free`: fixed-length external memory outside the Dart GC.
 - Native `malloc`/`free` and Web `WebAssembly.Memory` arena backends.
+- Raw int API: `unsafeAlloc`, `unsafeRead*`, `unsafeWrite*`, `unsafeFree`.
 - `AsyncFile.readAtUnsafe` / `writeAtUnsafe` with explicit length.
 
 ## 0.2.0
@@ -188,5 +189,7 @@ First development release.
 - `putUint64` little-endian limb encoding and atomic failure on short buffers.
 - `ParallelBytesFile` barrier deadlock when queued work already existed.
 - Windows read-only mapping `zeroize` guard and empty-file `map` consistency.
+
+
 
 

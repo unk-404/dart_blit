@@ -2,7 +2,7 @@
 @TestOn('browser')
 library;
 
-import 'package:blit/blit.dart';
+import 'package:blit/unsafe.dart';
 import 'package:test/test.dart';
 
 void main() {

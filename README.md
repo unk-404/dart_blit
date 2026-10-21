@@ -1,4 +1,4 @@
-# blit
+﻿# blit
 
 Zero-copy `Bytes` / `BytesMut`, async file I/O, and Web storage for Dart and
 Flutter. Native I/O is pure `dart:ffi`; Web I/O uses OPFS, IndexedDB, and Blob.
@@ -172,6 +172,8 @@ Available:
 
 ## Unsafe external memory
 
+Unsafe APIs live in `package:blit/unsafe.dart`.
+
 `UnsafeBytes` is a fixed-length allocation handle outside the Dart GC. The
 length is not stored in the handle; callers pass it to every length-bearing
 operation. `free` releases through the allocator header.
@@ -192,6 +194,14 @@ not a C ABI layer and does not define struct layouts.
 
 `AsyncFile.readAtUnsafe` and `writeAtUnsafe` accept an `UnsafeBytes` plus an
 explicit length.
+
+Raw int operations are in `package:blit/unsafe_raw.dart`:
+
+```dart
+final address = unsafeAlloc(8);
+unsafeWriteInt32(address, 0, 42);
+unsafeFree(address);
+```
 
 ## Native zero-copy
 
@@ -271,5 +281,7 @@ benchmarks, and renders the benchmark SVG.
 - `FileOptions.direct` requires aligned offsets and lengths.
 - Overlapping writes are serialized; do not assume a specific completion order.
 - iOS/Android native paths are not validated by CI.
+
+
 
 
