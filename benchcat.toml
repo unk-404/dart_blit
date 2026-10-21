@@ -6,7 +6,7 @@ subtitle = "{os|local} - Dart vs Rust - {commit:short|local}"
 footer = "Generated from {rows} rows"
 width = 920
 min_height = 0
-max_rows = 40
+max_rows = 48
 only_matched = true
 missing = "placeholder"
 kaomoji = "(^_^)"
@@ -178,6 +178,38 @@ note = "v0.2 - 8 MiB - zero-copy target"
 unit = "MiB/s"
 value = "value * 32"
 group = "v0.2 AsyncFile"
+# Bytes vs UnsafeBytes.
+[[row]]
+id = "BytesVsUnsafe bytes.getUint32 x4096"
+label = "getUint32"
+note = "Bytes - bounds checked"
+unit = "Mreads/s"
+value = "value * 4096 / 1000000"
+group = "Bytes vs UnsafeBytes"
+
+[[row]]
+id = "Unsafe unsafe.getUint32 x4096"
+label = "getUint32"
+note = "UnsafeBytes - no checks"
+unit = "Mreads/s"
+value = "value * 4096 / 1000000"
+group = "Bytes vs UnsafeBytes"
+
+[[row]]
+id = "Bytes bytes.alloc.4KiB x64"
+label = "alloc 4 KiB"
+note = "Bytes + Uint8List"
+unit = "Mallocs/s"
+value = "value * 64 / 1000000"
+group = "Bytes vs UnsafeBytes alloc"
+
+[[row]]
+id = "Unsafe unsafe.alloc.4KiB x64"
+label = "alloc 4 KiB"
+note = "UnsafeBytes external memory"
+unit = "Mallocs/s"
+value = "value * 64 / 1000000"
+group = "Bytes vs UnsafeBytes alloc"
 # Dart IndexedDB backend (browser-only, no native comparison).
 [[row]]
 id = "idb.read.random4K"
@@ -328,5 +360,7 @@ note = "1 byte - fixed destination"
 unit = "MiB/s"
 value = "value * 4096 / 1048576"
 group = "Reader/Writer"
+
+
 
 

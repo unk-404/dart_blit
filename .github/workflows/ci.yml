@@ -338,6 +338,22 @@ jobs:
             exit $code
           }
 
+      - name: Benchmark Bytes vs UnsafeBytes
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/unsafe_bytes_benchmarks_test.dart 2> bench-unsafe.stderr.log
+          $code = $LASTEXITCODE
+          $output | Where-Object { $_ -match '^\s*\{' } |
+            Set-Content -Encoding utf8 bench-unsafe.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) {
+            if (Test-Path bench-unsafe.stderr.log) {
+              Write-Host '--- unsafe benchmark stderr ---'
+              Get-Content bench-unsafe.stderr.log
+            }
+            exit $code
+          }
       - name: Benchmark v0.2 AsyncFile
         shell: pwsh
         run: |
@@ -375,7 +391,7 @@ jobs:
         shell: pwsh
         run: |
           Get-Content bench-core.jsonl, bench-random.jsonl, bench-iocp.jsonl, `
-            bench-bytes.jsonl, bench-uring.jsonl, bench-idb.jsonl, `
+            bench-bytes.jsonl, bench-uring.jsonl, bench-idb.jsonl, bench-unsafe.jsonl, `
             bench-v2.jsonl |
             Set-Content -Encoding utf8 bench-dart.jsonl
 
@@ -426,4 +442,5 @@ jobs:
           }
           git commit -m "chore(bench): update benchmark SVG [skip ci]"
           git push
+
 
