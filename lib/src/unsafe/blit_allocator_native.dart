@@ -1,128 +1,269 @@
-/// Mimalloc-inspired size-class allocator for blit experiments.
+/// Mimalloc-inspired allocator for blit.
 ///
-/// This is intentionally not wired into UnsafeBytes yet. It reserves one
-/// external arena, uses fixed 64 KiB slabs and per-class free lists, and avoids
-/// per-allocation FFI calls.
+/// Follows mimalloc's source where it matters for blit:
+/// * the 73-bin 12.5% table from `init.c` / `page-queue.c`;
+/// * 64 KiB small pages, 512 KiB medium pages, 4 MiB large pages;
+/// * page-local free lists and lazy 8 KiB capacity extension from `page.c`;
+/// * on-demand page allocation; no arena is reserved up front.
+///
+/// It intentionally omits mimalloc's thread-safe heaps, arenas, guard pages,
+/// encoded free lists and OS commit machinery. The unsafe path is assumed to be
+/// single-isolate, and invalid operations are undefined.
 library;
 
 import 'dart:ffi';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
-const int _defaultArenaSize = 64 * 1024 * 1024;
-const int _defaultSlabSize = 64 * 1024;
-const int _slabHeader = 16;
+const int _smallPageSize = 64 * 1024;
+const int _mediumPageSize = 512 * 1024;
+const int _largePageSize = 4 * 1024 * 1024;
+const int _maxExtendBytes = 8 * 1024;
+const int _sliceShift = 16;
+const int _sliceSize = 1 << _sliceShift;
+const int _hugeBin = 73;
 
-const List<int> _classes = [
+// mimalloc `init.c`: MI_PAGE_QUEUES_EMPTY, words converted to bytes.
+// index 0 is unused; bins 1..72 are the real classes.
+const List<int> _binSizes = [
+  0,
   8,
   16,
+  24,
   32,
+  40,
+  48,
+  56,
   64,
+  80,
+  96,
+  112,
   128,
+  160,
+  192,
+  224,
   256,
+  320,
+  384,
+  448,
   512,
+  640,
+  768,
+  896,
   1024,
+  1280,
+  1536,
+  1792,
   2048,
+  2560,
+  3072,
+  3584,
   4096,
+  5120,
+  6144,
+  7168,
   8192,
+  10240,
+  12288,
+  14336,
   16384,
+  20480,
+  24576,
+  28672,
   32768,
+  40960,
+  49152,
+  57344,
   65536,
+  81920,
+  98304,
+  114688,
+  131072,
+  163840,
+  196608,
+  229376,
+  262144,
+  327680,
+  393216,
+  458752,
+  524288,
+  655360,
+  786432,
+  917504,
+  1048576,
+  1310720,
+  1572864,
+  1835008,
+  2097152,
+  2621440,
+  3145728,
+  3670016,
+  4194304,
 ];
 
-final class BlitAllocator {
-  BlitAllocator({
-    this.arenaSize = _defaultArenaSize,
-    this.slabSize = _defaultSlabSize,
-  }) : _arena = malloc.allocate<Uint8>(arenaSize) {
-    _base = _arena.address;
-    _bytes = _arena.asTypedList(arenaSize);
-    _data = ByteData.sublistView(_bytes);
-  }
+final class _Page {
+  _Page({
+    required this.bin,
+    required this.blockSize,
+    required this.base,
+    required this.raw,
+    required this.pageSize,
+    required this.data,
+    required this.reserved,
+  });
 
-  final int arenaSize;
-  final int slabSize;
-  final Pointer<Uint8> _arena;
-  late final int _base;
-  late final Uint8List _bytes;
-  late final ByteData _data;
-  late final List<int> _heads = List<int>.filled(_classes.length, 0);
-  final Map<int, int> _slabClass = {};
-  int _bump = 0;
-  bool _closed = false;
+  final int bin;
+  final int blockSize;
+  final int base;
+  final int raw;
+  final int pageSize;
+  final ByteData data;
+  final int reserved;
+  int capacity = 0;
+  int used = 0;
+  int freeHead = 0;
+}
+
+final class BlitAllocator {
+  BlitAllocator();
+
+  final List<_Page?> _current = List<_Page?>.filled(_hugeBin, null);
+  final Map<int, _Page> _pageBySlice = {};
+  final List<_Page> _pages = [];
+  final Set<int> _huge = {};
+
+  int get pageCount => _pages.length;
+
+  int get residentBytes => _pages.fold(0, (sum, page) => sum + page.pageSize);
 
   int alloc(int size) {
-    if (_closed) throw StateError('allocator is closed');
     if (size <= 0) size = 1;
-    var classIndex = _classFor(size);
-    if (classIndex < 0) {
-      return malloc.allocate<Uint8>(size).address;
+    final bin = _binFor(size);
+    if (bin == _hugeBin) {
+      final address = malloc.allocate<Uint8>(size).address;
+      _huge.add(address);
+      return address;
     }
-    var head = _heads[classIndex];
-    if (head == 0) {
-      head = _newSlab(classIndex);
+    var page = _current[bin];
+    if (page == null) {
+      page = _newPage(bin);
+      _current[bin] = page;
     }
-    final next = _readU32(head);
-    _heads[classIndex] = next;
-    return _base + head;
+    var address = page.freeHead;
+    if (address == 0) {
+      if (_extend(page)) {
+        address = page.freeHead;
+      } else {
+        page = _newPage(bin);
+        _current[bin] = page;
+        address = page.freeHead;
+      }
+    }
+    if (address == 0) throw StateError('allocator failed');
+    page.freeHead = _readAddress(page, address);
+    page.used++;
+    if (page.freeHead == 0 && page.capacity >= page.reserved) {
+      _current[bin] = null;
+    }
+    return address;
   }
 
   void free(int address) {
-    if (_closed) throw StateError('allocator is closed');
-    final offset = address - _base;
-    if (offset < 0 || offset >= _bump) {
-      malloc.free(Pointer<Uint8>.fromAddress(address));
+    final page = _pageBySlice[address >> _sliceShift];
+    if (page == null) {
+      if (_huge.remove(address)) {
+        malloc.free(Pointer<Uint8>.fromAddress(address));
+      }
       return;
     }
-    final slabOffset = offset & ~(slabSize - 1);
-    final classSize = _slabClass[slabOffset];
-    if (classSize == null) throw StateError('invalid allocator address');
-    final classIndex = _indexOf(classSize);
-    _writeU32(offset, _heads[classIndex]);
-    _heads[classIndex] = offset;
+    _writeAddress(page, address, page.freeHead);
+    page.freeHead = address;
+    page.used--;
+    _current[page.bin] = page;
   }
 
   void dispose() {
-    if (_closed) return;
-    _closed = true;
-    malloc.free(_arena);
+    for (final address in _huge) {
+      malloc.free(Pointer<Uint8>.fromAddress(address));
+    }
+    _huge.clear();
+    for (final page in _pages) {
+      malloc.free(Pointer<Uint8>.fromAddress(page.raw));
+    }
+    _pages.clear();
+    _pageBySlice.clear();
+    for (var i = 0; i < _current.length; i++) {
+      _current[i] = null;
+    }
   }
 
-  int _newSlab(int classIndex) {
-    final overhead = _slabHeader;
-    final slabOffset = _bump;
-    final end = slabOffset + slabSize;
-    if (end > arenaSize) throw StateError('allocator arena exhausted');
-    _bump = end;
-    final classSize = _classes[classIndex];
-    final count = (slabSize - overhead) ~/ classSize;
-    if (count <= 0) throw StateError('invalid slab size');
-    final first = slabOffset + overhead;
-    _slabClass[slabOffset] = classSize;
+  _Page _newPage(int bin) {
+    final blockSize = _binSizes[bin];
+    final pageSize = blockSize <= 8192
+        ? _smallPageSize
+        : (blockSize <= 65536 ? _mediumPageSize : _largePageSize);
+    final total = pageSize + _sliceSize;
+    final rawPointer = malloc.allocate<Uint8>(total);
+    final raw = rawPointer.address;
+    final base = (raw + _sliceSize - 1) & ~(_sliceSize - 1);
+    final page = _Page(
+      bin: bin,
+      blockSize: blockSize,
+      base: base,
+      raw: raw,
+      pageSize: pageSize,
+      data: ByteData.sublistView(rawPointer.asTypedList(total)),
+      reserved: pageSize ~/ blockSize,
+    );
+    _pages.add(page);
+    for (var offset = 0; offset < pageSize; offset += _sliceSize) {
+      _pageBySlice[(base + offset) >> _sliceShift] = page;
+    }
+    _extend(page);
+    return page;
+  }
+
+  bool _extend(_Page page) {
+    if (page.capacity >= page.reserved) return false;
+    final maxExtend = page.blockSize >= _maxExtendBytes
+        ? 1
+        : (_maxExtendBytes ~/ page.blockSize);
+    final count = math.min(maxExtend, page.reserved - page.capacity);
+    if (count <= 0) return false;
+    final first = page.base + page.capacity * page.blockSize;
     for (var i = 0; i < count; i++) {
-      final at = first + i * classSize;
-      final next = i + 1 < count ? at + classSize : 0;
-      _writeU32(at, next);
+      final at = first + i * page.blockSize;
+      final next = i + 1 < count ? at + page.blockSize : 0;
+      _writeAddress(page, at, next);
     }
-    return first;
+    page.capacity += count;
+    page.freeHead = first;
+    return true;
   }
 
-  static int _classFor(int size) {
-    for (var i = 0; i < _classes.length; i++) {
-      if (size <= _classes[i]) return i;
-    }
-    return -1;
+  int _readAddress(_Page page, int address) {
+    final offset = address - page.raw;
+    final lo = page.data.getUint32(offset, Endian.little);
+    final hi = page.data.getUint32(offset + 4, Endian.little);
+    return lo | (hi << 32);
   }
 
-  static int _indexOf(int classSize) {
-    for (var i = 0; i < _classes.length; i++) {
-      if (_classes[i] == classSize) return i;
-    }
-    throw StateError('invalid size class');
+  void _writeAddress(_Page page, int address, int value) {
+    final offset = address - page.raw;
+    page.data.setUint32(offset, value & 0xFFFFFFFF, Endian.little);
+    page.data.setUint32(offset + 4, value >> 32, Endian.little);
   }
 
-  int _readU32(int offset) => _data.getUint32(offset, Endian.little);
-  void _writeU32(int offset, int value) =>
-      _data.setUint32(offset, value, Endian.little);
+  static int _binFor(int size) {
+    var wsize = (size + 7) >> 3;
+    if (wsize <= 8) return wsize <= 1 ? 1 : wsize;
+    // Largest table entry is 4 MiB; larger blocks are singleton huge pages.
+    if (wsize > 524288) return _hugeBin;
+    wsize--;
+    final b = wsize.bitLength - 1;
+    final bin = ((b << 2) + ((wsize >> (b - 2)) & 3)) - 3;
+    return bin.clamp(1, _hugeBin - 1);
+  }
 }

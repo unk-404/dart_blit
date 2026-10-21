@@ -1,12 +1,24 @@
-﻿import 'dart:ffi';
+import 'dart:ffi';
 
 import 'package:blit/blit_native.dart';
 import 'package:blit/unsafe.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('BlitAllocator is lazy', () {
+    final allocator = BlitAllocator();
+    try {
+      expect(allocator.residentBytes, 0);
+      final address = allocator.alloc(5);
+      expect(allocator.pageCount, 1);
+      expect(allocator.residentBytes, 64 * 1024);
+      allocator.free(address);
+    } finally {
+      allocator.dispose();
+    }
+  });
   test('BlitAllocator size classes and free list', () {
-    final allocator = BlitAllocator(arenaSize: 1 << 20);
+    final allocator = BlitAllocator();
     try {
       final a = allocator.alloc(5);
       final b = allocator.alloc(5);
@@ -26,7 +38,7 @@ void main() {
   });
 
   test('BlitAllocator large fallback', () {
-    final allocator = BlitAllocator(arenaSize: 1 << 20);
+    final allocator = BlitAllocator();
     try {
       final address = allocator.alloc(1 << 17);
       expect(address, isNot(0));
@@ -44,4 +56,3 @@ void main() {
     allocator.free(value);
   });
 }
-

@@ -273,6 +273,9 @@ The charts at the top are generated from CI benchmark results. Native engines:
 Use `PerformanceProfile` and `FileOptions` to select a policy instead of
 referencing engine classes directly.
 
+`BlitAllocator` is currently an opt-in experiment only; it is not used by
+`UnsafeBytes` until the allocator chart is evaluated.
+
 ## Development
 
 ```bash
@@ -291,6 +294,7 @@ benchmarks, and renders split benchmark SVGs.
 - `FileOptions.direct` requires aligned offsets and lengths.
 - Overlapping writes are serialized; do not assume a specific completion order.
 - iOS/Android native paths are not validated by CI.
+
 
 
 

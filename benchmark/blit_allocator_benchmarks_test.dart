@@ -20,7 +20,7 @@ void _bench(String name, void Function() body) {
 
 void main() {
   setUpAll(() {
-    _allocator = BlitAllocator(arenaSize: 64 * 1024 * 1024);
+    _allocator = BlitAllocator();
   });
 
   tearDownAll(() {
