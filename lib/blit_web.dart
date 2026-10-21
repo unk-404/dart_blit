@@ -1,4 +1,4 @@
-/// Web-specific entry point: OPFS, IndexedDB, and Blob.
+﻿/// Web-specific entry point: OPFS, IndexedDB, and Blob.
 library;
 
 import 'dart:js_interop';
@@ -50,3 +50,4 @@ Future<BlitFile> openBlob(JSObject blob, {int cacheLimit = 8 << 20}) async {
     ),
   );
 }
+

@@ -10,6 +10,7 @@ import 'cancel.dart';
 import 'errors.dart';
 import 'open_backend.dart';
 import 'options.dart';
+import 'unsafe_bytes.dart';
 
 /// One read request for [AsyncFile.readMany].
 final class ReadRequest {
@@ -333,6 +334,22 @@ final class AsyncFile implements AsyncRead, AsyncWrite {
     }
     return (offset: min, bytes: out);
   }
+
+  /// Reads into [dst] without a Dart-side intermediate buffer.
+  Future<int> readAtUnsafe(
+    int offset,
+    UnsafeBytes dst,
+    int length, {
+    CancelToken? cancel,
+  }) => readAt(offset, ReadBuf(dst.view(length)), cancel: cancel);
+
+  /// Writes from [src] without a Dart-side intermediate buffer.
+  Future<int> writeAtUnsafe(
+    int offset,
+    UnsafeBytes src,
+    int length, {
+    CancelToken? cancel,
+  }) => writeAt(offset, IoSlice(src.view(length)), cancel: cancel);
 
   Future<int> append(IoSlice src, {CancelToken? cancel}) async {
     cancel?.throwIfCancelled(path: path);

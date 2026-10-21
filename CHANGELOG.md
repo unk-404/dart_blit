@@ -1,4 +1,12 @@
-# Changelog
+﻿# Changelog
+
+## 0.2.1
+
+### Added
+
+- `UnsafeBytes.alloc` / `free`: fixed-length external memory outside the Dart GC.
+- Native `malloc`/`free` and Web `WebAssembly.Memory` arena backends.
+- `AsyncFile.readAtUnsafe` / `writeAtUnsafe` with explicit length.
 
 ## 0.2.0
 
@@ -130,7 +138,7 @@
   `workers[i % N]` (default 4), keeps the manifest single-writer, and caches
   each chunk handle in its owning worker.
 - Optional Web SAB ring for small `read`/`write` calls when
-  `crossOriginIsolated` and `Atomics.waitAsync` are available: 8 闁?64 KiB
+  `crossOriginIsolated` and `Atomics.waitAsync` are available: 8 闂?64 KiB
   slots, `Atomics` wakeups, postMessage fallback for larger payloads and
   non-isolated pages.
 - Benchmark SVG rendering now uses `bench-svg` (`bench-svg.toml` + the
@@ -180,7 +188,5 @@ First development release.
 - `putUint64` little-endian limb encoding and atomic failure on short buffers.
 - `ParallelBytesFile` barrier deadlock when queued work already existed.
 - Windows read-only mapping `zeroize` guard and empty-file `map` consistency.
-
-
 
 

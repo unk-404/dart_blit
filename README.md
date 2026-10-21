@@ -170,6 +170,29 @@ Available:
 - `Uint8ListReader`, `BytesAsyncReader`, `Uint8ListWriter`,
   `BytesMutAsyncWriter`
 
+## Unsafe external memory
+
+`UnsafeBytes` is a fixed-length allocation handle outside the Dart GC. The
+length is not stored in the handle; callers pass it to every length-bearing
+operation. `free` releases through the allocator header.
+
+```dart
+final bytes = UnsafeBytes.alloc(64);
+
+final view = bytes.view(64);
+bytes.setInt32(0, 42);
+bytes.setFloat64(8, 1.5);
+bytes.free();
+```
+
+Native uses `malloc`/`free`; Web uses a `WebAssembly.Memory` arena. The handle
+is an `int` extension type, so allocation does not add a Dart object. There are
+no bounds, lifetime, alignment, double-free, or use-after-free checks. This is
+not a C ABI layer and does not define struct layouts.
+
+`AsyncFile.readAtUnsafe` and `writeAtUnsafe` accept an `UnsafeBytes` plus an
+explicit length.
+
 ## Native zero-copy
 
 ```dart
@@ -248,4 +271,5 @@ benchmarks, and renders the benchmark SVG.
 - `FileOptions.direct` requires aligned offsets and lengths.
 - Overlapping writes are serialized; do not assume a specific completion order.
 - iOS/Android native paths are not validated by CI.
+
 
