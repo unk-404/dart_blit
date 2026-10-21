@@ -1,4 +1,4 @@
-/// Web (OPFS) backend 鈥?public entry points for code that targets browsers.
+/// Web (OPFS) backend - public entry points for code that targets browsers.
 ///
 /// The cross-platform entry point is
 /// `package:blit/src/io/open.dart`'s `openBytesFile`; this library adds the
@@ -20,7 +20,7 @@
 ///
 /// ```text
 /// OPFS: bytes-opfs/d_<hash>_<name>/m.a, m.b       manifest (double slot)
-///                              /c/0.bin, 1.bin鈥?  <= chunkSize chunks
+///                              /c/0.bin, 1.bin...  <= chunkSize chunks
 /// ```
 ///
 /// ## Caveats

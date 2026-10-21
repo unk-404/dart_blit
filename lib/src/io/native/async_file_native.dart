@@ -1,7 +1,7 @@
 /// Native-buffer extensions for [AsyncFile].
 library;
 
-import 'async_file.dart';
+import '../async_file.dart';
 import 'native_buffer.dart';
 
 extension AsyncFileNative on AsyncFile {
@@ -29,3 +29,4 @@ extension AsyncFileNative on AsyncFile {
     }
   }
 }
+

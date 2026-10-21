@@ -1,4 +1,28 @@
-# Changelog
+﻿# Changelog
+
+## 0.2.2
+
+### Changed
+
+- Removed `lib/src/v2/`; moved to `core/`, `io/`, `io/native/`, `io/backend/`,
+  and `unsafe/` without changing public exports.
+- `AsyncFile` keeps the same public API after the internal move.
+
+### Added
+
+- `BlitAllocator`: mimalloc-inspired size-class/slab allocator, not wired into
+  `UnsafeBytes` yet.
+- `DartAllocator` benchmark baseline.
+- `AddressIo` direct native path for `readAtUnsafe` / `writeAtUnsafe`.
+- Batch memory operations: `unsafeCopy`, `unsafeMove`, `unsafeFill`,
+  `unsafeZero`, `unsafeCompare`.
+- Separate BlitAllocator vs DartAllocator benchmark chart.
+
+### Performance
+
+- Direct address I/O avoids a typed-data view on `NativeMmapFile`.
+- Allocator benchmark left opt-in pending CI results.
+
 
 ## 0.2.1
 
@@ -192,6 +216,7 @@ First development release.
 - `putUint64` little-endian limb encoding and atomic failure on short buffers.
 - `ParallelBytesFile` barrier deadlock when queued work already existed.
 - Windows read-only mapping `zeroize` guard and empty-file `map` consistency.
+
 
 
 

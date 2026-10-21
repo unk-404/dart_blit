@@ -1,7 +1,7 @@
-import '../io/bytes_file.dart';
-import '../io/open_web.dart' as opfs;
-import '../io/web/web.dart' as web;
-import 'options.dart';
+import '../bytes_file.dart';
+import '../open_web.dart' as opfs;
+import '../web/web.dart' as web;
+import '../options.dart';
 
 /// Web backend selection: OPFS first, IndexedDB fallback.
 Future<BytesFile> openBackend(String path, FileOptions options) async {
@@ -23,3 +23,4 @@ Future<BytesFile> openBackend(String path, FileOptions options) async {
     }
   }
 }
+

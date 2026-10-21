@@ -4,11 +4,12 @@ library;
 import 'dart:async';
 import 'dart:typed_data';
 
-import '../io/async_io.dart';
-import '../io/bytes_file.dart';
+import 'address_io.dart';
+import 'async_io.dart';
+import 'bytes_file.dart';
 import 'cancel.dart';
 import 'errors.dart';
-import 'open_backend.dart';
+import 'backend/open_backend.dart';
 import 'options.dart';
 import '../unsafe/bytes.dart';
 
@@ -341,7 +342,17 @@ final class AsyncFile implements AsyncRead, AsyncWrite {
     UnsafeBytes dst,
     int length, {
     CancelToken? cancel,
-  }) => readAt(offset, ReadBuf(dst.view(length)), cancel: cancel);
+  }) {
+    final backend = _backend;
+    if (backend is AddressIo) {
+      return _guard(
+        'readAtUnsafe',
+        () async =>
+            (backend as AddressIo).readAtAddress(offset, dst.address, length),
+      );
+    }
+    return readAt(offset, ReadBuf(dst.view(length)), cancel: cancel);
+  }
 
   /// Writes from [src] without a Dart-side intermediate buffer.
   Future<int> writeAtUnsafe(
@@ -349,7 +360,17 @@ final class AsyncFile implements AsyncRead, AsyncWrite {
     UnsafeBytes src,
     int length, {
     CancelToken? cancel,
-  }) => writeAt(offset, IoSlice(src.view(length)), cancel: cancel);
+  }) {
+    final backend = _backend;
+    if (backend is AddressIo) {
+      return _guard(
+        'writeAtUnsafe',
+        () async =>
+            (backend as AddressIo).writeAtAddress(offset, src.address, length),
+      );
+    }
+    return writeAt(offset, IoSlice(src.view(length)), cancel: cancel);
+  }
 
   Future<int> append(IoSlice src, {CancelToken? cancel}) async {
     cancel?.throwIfCancelled(path: path);

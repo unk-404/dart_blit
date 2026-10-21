@@ -61,3 +61,39 @@ double unsafeReadFloat64(int address, int offset) =>
 
 void unsafeWriteFloat64(int address, int offset, double value) =>
     Pointer<Double>.fromAddress(address + offset).value = value;
+
+void unsafeCopy(int dst, int src, int length) {
+  final d = Pointer<Uint8>.fromAddress(dst).asTypedList(length);
+  final s = Pointer<Uint8>.fromAddress(src).asTypedList(length);
+  d.setRange(0, length, s);
+}
+
+void unsafeMove(int dst, int src, int length) {
+  final d = Pointer<Uint8>.fromAddress(dst).asTypedList(length);
+  final s = Pointer<Uint8>.fromAddress(src).asTypedList(length);
+  if (dst <= src || dst >= src + length) {
+    d.setRange(0, length, s);
+  } else {
+    for (var i = length - 1; i >= 0; i--) {
+      d[i] = s[i];
+    }
+  }
+}
+
+void unsafeFill(int address, int value, int length) {
+  Pointer<Uint8>.fromAddress(address)
+      .asTypedList(length)
+      .fillRange(0, length, value & 0xFF);
+}
+
+void unsafeZero(int address, int length) => unsafeFill(address, 0, length);
+
+int unsafeCompare(int a, int b, int length) {
+  final x = Pointer<Uint8>.fromAddress(a).asTypedList(length);
+  final y = Pointer<Uint8>.fromAddress(b).asTypedList(length);
+  for (var i = 0; i < length; i++) {
+    final d = x[i] - y[i];
+    if (d != 0) return d;
+  }
+  return 0;
+}

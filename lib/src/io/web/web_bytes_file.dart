@@ -1,11 +1,11 @@
-﻿/// The Web backend: a logical random-access file stored as OPFS chunks plus a
+/// The Web backend: a logical random-access file stored as OPFS chunks plus a
 /// double-slot manifest.
 ///
 /// ## Why chunks?
 ///
 /// A single 32 GiB OPFS file cannot be written randomly: `truncate(32 GiB)` is
 /// metadata-cheap, but the first write near the end materializes every zero
-/// before it (measured 12 597 ms on Windows; `docs/research/web.md` 搂2.3).  So a
+/// before it (measured 12 597 ms on Windows; `docs/research/web.md` 2.3).  So a
 /// logical file of length `L` is:
 ///
 /// * `ceil(L / chunkSize)` *chunk files*, each written sequentially and never

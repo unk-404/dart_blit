@@ -3,8 +3,8 @@ library;
 
 import 'dart:typed_data';
 
-import '../bytes.dart';
-import '../io/async_io.dart';
+import '../core/bytes.dart';
+import 'async_io.dart';
 import 'async_file.dart';
 import 'options.dart';
 
@@ -149,3 +149,4 @@ Uint8List _asBytes(Object data) {
   if (data is List<int>) return Uint8List.fromList(data);
   throw ArgumentError.value(data, 'data', 'expected bytes');
 }
+

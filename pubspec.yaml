@@ -1,6 +1,6 @@
 ﻿name: blit
 description: Zero-copy Bytes/BytesMut and high-performance random-access file I/O for Dart and Flutter, with async file I/O, native FFI mmap, and Web storage.
-version: 0.2.1
+version: 0.2.2
 
 repository: https://github.com/unk-404/dart_blit
 topics:
@@ -21,6 +21,7 @@ dev_dependencies:
   benchmark_test: ^0.1.2
   lints: ^6.0.0
   test: ^1.31.1
+
 
 
 

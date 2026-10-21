@@ -5,7 +5,7 @@ import 'dart:js_interop';
 
 import 'blit.dart';
 import 'src/io/web/web.dart' as web;
-import 'src/v2/async_file.dart';
+import 'src/io/async_file.dart';
 
 export 'blit.dart';
 export 'src/io/web/web.dart';
@@ -50,4 +50,5 @@ Future<BlitFile> openBlob(JSObject blob, {int cacheLimit = 8 << 20}) async {
     ),
   );
 }
+
 

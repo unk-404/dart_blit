@@ -1,4 +1,4 @@
-﻿/// Self-contained asynchronous I/O utilities.
+/// Self-contained asynchronous I/O utilities.
 ///
 /// This layer is transport-agnostic: it composes over existing async backends
 /// and Futures, and does not create an executor or event loop. It is web-safe
@@ -10,9 +10,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../bytes.dart';
-import '../bytes_mut.dart';
-import '../u64/uint64.dart';
+import '../core/bytes.dart';
+import '../core/bytes_mut.dart';
+import '../core/u64/uint64.dart';
 
 /// Result of one async read.
 final class ReadResult {

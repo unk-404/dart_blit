@@ -6,7 +6,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
-import '../io/async_io.dart';
+import '../async_io.dart';
 
 final class NativeBuffer {
   NativeBuffer._(this.pointer, this.length)
@@ -84,3 +84,4 @@ final class NativeBufferPool {
     _cached = 0;
   }
 }
+

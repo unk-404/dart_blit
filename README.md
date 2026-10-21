@@ -6,6 +6,8 @@ No C compiler, native build hooks, or native assets.
 
 ![native benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-native.svg)
 
+![allocator benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-allocator.svg)
+
 ![core Bytes benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-core.svg)
 
 ![memory benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-memory.svg)
@@ -289,6 +291,7 @@ benchmarks, and renders split benchmark SVGs.
 - `FileOptions.direct` requires aligned offsets and lengths.
 - Overlapping writes are serialized; do not assume a specific completion order.
 - iOS/Android native paths are not validated by CI.
+
 
 
 

@@ -1,7 +1,7 @@
-﻿/// Native-only zero-copy buffers.
+/// Native-only zero-copy buffers.
 library;
 
-export 'src/v2/async_file_native.dart';
-export 'src/v2/native_buffer.dart';
-export 'src/v2/native_mmap_file.dart';
-
+export 'src/io/native/async_file_native.dart';
+export 'src/io/native/native_buffer.dart';
+export 'src/io/native/native_mmap_file.dart';
+export 'src/unsafe/blit_allocator_native.dart';

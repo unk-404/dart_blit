@@ -20,4 +20,19 @@ void main() {
       bytes.free();
     }
   });
+  test('batch copy/fill/compare on Web', () {
+    final a = UnsafeBytes.alloc(16);
+    final b = UnsafeBytes.alloc(16);
+    try {
+      a.view(16).setAll(0, List.generate(16, (i) => i));
+      unsafeCopy(b.address, a.address, 16);
+      expect(unsafeCompare(a.address, b.address, 16), 0);
+      unsafeFill(b.address, 0x55, 4);
+      expect(b.view(4), everyElement(0x55));
+      expect(unsafeCompare(a.address, b.address, 4), isNot(0));
+    } finally {
+      a.free();
+      b.free();
+    }
+  });
 }

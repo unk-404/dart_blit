@@ -147,3 +147,27 @@ double unsafeReadFloat64(int address, int offset) =>
 
 void unsafeWriteFloat64(int address, int offset, double value) =>
     _sharedArena.data.setFloat64(address + offset, value, Endian.little);
+
+void unsafeCopy(int dst, int src, int length) {
+  unsafeView(dst, length).setRange(0, length, unsafeView(src, length));
+}
+
+void unsafeMove(int dst, int src, int length) {
+  unsafeView(dst, length).setAll(0, unsafeView(src, length));
+}
+
+void unsafeFill(int address, int value, int length) {
+  unsafeView(address, length).fillRange(0, length, value & 0xFF);
+}
+
+void unsafeZero(int address, int length) => unsafeFill(address, 0, length);
+
+int unsafeCompare(int a, int b, int length) {
+  final x = unsafeView(a, length);
+  final y = unsafeView(b, length);
+  for (var i = 0; i < length; i++) {
+    final d = x[i] - y[i];
+    if (d != 0) return d;
+  }
+  return 0;
+}

@@ -5,12 +5,13 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
-import '../io/bytes_file.dart';
-import '../io/native/mmap.dart';
+import '../address_io.dart';
+import '../bytes_file.dart';
+import 'mmap.dart';
 import 'native_buffer.dart';
 
 /// Wraps a native mmap file without exposing engine names to the simple API.
-final class NativeMmapFile implements BytesFile {
+final class NativeMmapFile implements BytesFile, AddressIo {
   NativeMmapFile._(this._file);
 
   final MmapFile _file;
@@ -75,6 +76,14 @@ final class NativeMmapFile implements BytesFile {
 
   @override
   bool get supportsConcurrentReads => false;
+
+  @override
+  int readAtAddress(int offset, int address, int length) =>
+      _file.readAtPointer(offset, Pointer<Uint8>.fromAddress(address), length);
+
+  @override
+  int writeAtAddress(int offset, int address, int length) =>
+      _file.writeAtPointer(offset, Pointer<Uint8>.fromAddress(address), length);
 
   /// Zero-copy read into caller-owned native memory.
   int readAtPointer(int offset, Pointer<Uint8> dst, int length) =>

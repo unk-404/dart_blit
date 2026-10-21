@@ -1,8 +1,8 @@
-import '../io/bytes_file.dart';
-import '../io/bytes_file_native.dart';
-import '../io/read_fast.dart';
-import 'native_mmap_file.dart';
-import 'options.dart';
+import '../bytes_file.dart';
+import '../bytes_file_native.dart';
+import '../read_fast.dart';
+import '../native/native_mmap_file.dart';
+import '../options.dart';
 
 Future<BytesFile> openBackend(String path, FileOptions options) async {
   if (options.direct) {
@@ -31,3 +31,4 @@ Future<BytesFile> openBackend(String path, FileOptions options) async {
     readOnly: options.readOnly,
   );
 }
+
