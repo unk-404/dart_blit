@@ -8,7 +8,8 @@
 - Native `malloc`/`free` and Web `WebAssembly.Memory` arena backends.
 - Raw int API: `unsafeAlloc`, `unsafeRead*`, `unsafeWrite*`, `unsafeFree`.
 - `AsyncFile.readAtUnsafe` / `writeAtUnsafe` with explicit length.
-- Bytes vs UnsafeBytes benchmark rows (scalar and 4 KiB read/write).
+- Separate Bytes and UnsafeBytes benchmark sources with matching `mem.*` IDs.
+- Bytes vs UnsafeBytes multi-source chart (read, write, set, alloc).
 - Benchmark charts split by comparison source.
 
 ## 0.2.0
@@ -191,6 +192,7 @@ First development release.
 - `putUint64` little-endian limb encoding and atomic failure on short buffers.
 - `ParallelBytesFile` barrier deadlock when queued work already existed.
 - Windows read-only mapping `zeroize` guard and empty-file `map` consistency.
+
 
 
 

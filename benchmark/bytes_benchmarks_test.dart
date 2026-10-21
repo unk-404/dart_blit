@@ -135,6 +135,49 @@ void main() {
     });
   });
 
+  {
+    final scratch = BytesMut(1 << 16);
+    final copy = Uint8List(4096);
+
+    bench('mem.getUint32', () {
+      for (var i = 0; i < 4096; i++) {
+        _sink ^= data.getUint32((_index++ * 4) & 0xFFFFC);
+      }
+    });
+
+    bench('mem.read4K', () {
+      for (var n = 0; n < 64; n++) {
+        for (var i = 0; i < 4096; i++) {
+          _sink ^= data[i];
+        }
+      }
+    });
+
+    bench('mem.write4K', () {
+      for (var n = 0; n < 64; n++) {
+        scratch.clear();
+        final view = scratch.spareView(4096);
+        view.fillRange(0, 4096, n & 0xFF);
+        scratch.advance(4096);
+        _sink ^= copy[n & 4095];
+      }
+    });
+
+    bench('mem.setUint32', () {
+      scratch.clear();
+      for (var i = 0; i < 4096; i++) {
+        scratch.putUint32Unchecked(i);
+      }
+      _sink ^= scratch.length;
+    });
+
+    bench('mem.alloc4K', () {
+      for (var i = 0; i < 64; i++) {
+        final value = Bytes.fromUint8List(Uint8List(4096));
+        _sink ^= value.length;
+      }
+    });
+  }
   group('Reader/Writer', () {
     bench('reader.readUint8.checked x4096', () {
       final reader = BytesReader(data);
