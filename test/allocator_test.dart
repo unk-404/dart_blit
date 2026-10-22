@@ -48,6 +48,19 @@ void main() {
     }
   });
 
+  test('opt-in UnsafeBytes allocWith/freeWith', () {
+    final allocator = BlitAllocator();
+    try {
+      final bytes = UnsafeBytes.allocWith(allocator, 64);
+      bytes.view(4).setAll(0, [1, 2, 3, 4]);
+      expect(bytes.view(4), [1, 2, 3, 4]);
+      expect(allocator.pageCount, 1);
+      bytes.freeWith(allocator);
+      expect(allocator.pageCount, 1);
+    } finally {
+      allocator.dispose();
+    }
+  });
   test('DartAllocator baseline', () {
     final allocator = DartAllocator();
     final value = allocator.alloc(8);

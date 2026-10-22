@@ -8,6 +8,8 @@ No C compiler, native build hooks, or native assets.
 
 ![allocator benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-allocator.svg)
 
+![allocator live-set benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-allocator-workload.svg)
+
 ![core Bytes benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-core.svg)
 
 ![memory benchmark](https://raw.githubusercontent.com/unk-404/dart_blit/master/assets/benchmarks-memory.svg)
@@ -273,8 +275,22 @@ The charts at the top are generated from CI benchmark results. Native engines:
 Use `PerformanceProfile` and `FileOptions` to select a policy instead of
 referencing engine classes directly.
 
-`BlitAllocator` is currently an opt-in experiment only; it is not used by
-`UnsafeBytes` until the allocator chart is evaluated.
+`BlitAllocator` is an opt-in experiment only; it is not used by the default
+`UnsafeBytes.alloc`. The live-set benchmark currently shows Dart's bump
+allocation winning for LIFO/FIFO/random and mixed live sets, so the system
+allocator remains the default.
+
+Explicit opt-in, same isolate only:
+
+```dart
+final allocator = BlitAllocator();
+final bytes = UnsafeBytes.allocWith(allocator, 64);
+bytes.freeWith(allocator);
+allocator.dispose();
+```
+
+`allocWith`/`freeWith` must use the same allocator in the same isolate.
+Mixing `freeWith` with `free` is undefined.
 
 ## Development
 
@@ -294,6 +310,8 @@ benchmarks, and renders split benchmark SVGs.
 - `FileOptions.direct` requires aligned offsets and lengths.
 - Overlapping writes are serialized; do not assume a specific completion order.
 - iOS/Android native paths are not validated by CI.
+
+
 
 
 

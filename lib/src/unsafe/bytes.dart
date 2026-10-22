@@ -4,6 +4,7 @@ library;
 import 'dart:typed_data';
 
 import 'allocator.dart';
+import 'allocator_api.dart';
 
 /// An owned raw allocation handle.
 ///
@@ -11,6 +12,11 @@ import 'allocator.dart';
 /// allocation. Length is not stored; callers pass it when a view is requested.
 extension type UnsafeBytes._(int _address) {
   static UnsafeBytes alloc(int length) => UnsafeBytes._(unsafeAlloc(length));
+
+  /// Opt-in external allocation. [freeWith] must use the same allocator in the
+  /// same isolate; [free] remains the system-allocator path.
+  static UnsafeBytes allocWith(UnsafeAllocator allocator, int length) =>
+      UnsafeBytes._(allocator.alloc(length));
 
   /// Wraps caller-owned memory. [free] is undefined for such a handle.
   static UnsafeBytes fromAddress(int address) => UnsafeBytes._(address);
@@ -21,6 +27,10 @@ extension type UnsafeBytes._(int _address) {
 
   /// Frees this allocation. Double-free/use-after-free is undefined.
   void free() => unsafeFree(_address);
+
+  /// Frees an [allocWith] allocation. The allocator must match and live in the
+  /// same isolate. Mixing this with [free] is undefined.
+  void freeWith(UnsafeAllocator allocator) => allocator.free(_address);
 
   /// Zero-copy view; length is caller-supplied.
   Uint8List view(int length) => unsafeView(_address, length);

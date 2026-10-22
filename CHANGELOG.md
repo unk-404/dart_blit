@@ -15,6 +15,9 @@
 - No 64 MiB allocator arena is reserved up front.
 - Single-slot local free-list cache: 64 B and 4 KiB immediate alloc/free
   no longer touch the page map.
+- Opt-in `UnsafeBytes.allocWith` / `freeWith` for `UnsafeAllocator`.
+- Live-set allocator benchmark (LIFO/FIFO/random/mixed); results keep the
+  system allocator as the default.
 - `DartAllocator` benchmark baseline.
 - `AddressIo` direct native path for `readAtUnsafe` / `writeAtUnsafe`.
 - Batch memory operations: `unsafeCopy`, `unsafeMove`, `unsafeFill`,
@@ -219,6 +222,7 @@ First development release.
 - `putUint64` little-endian limb encoding and atomic failure on short buffers.
 - `ParallelBytesFile` barrier deadlock when queued work already existed.
 - Windows read-only mapping `zeroize` guard and empty-file `map` consistency.
+
 
 
 

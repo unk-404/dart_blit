@@ -372,6 +372,39 @@ jobs:
             exit $code
           }
 
+      - name: Benchmark BlitAllocator live set
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/blit_allocator_workloads_test.dart 2> bench-blit-workloads.stderr.log
+          $code = $LASTEXITCODE
+          $output | Where-Object { $_ -match '^\s*\{' } |
+            Set-Content -Encoding utf8 bench-blit-workloads.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) {
+            if (Test-Path bench-blit-workloads.stderr.log) {
+              Write-Host '--- BlitAllocator live-set stderr ---'
+              Get-Content bench-blit-workloads.stderr.log
+            }
+            exit $code
+          }
+
+      - name: Benchmark DartAllocator live set
+        shell: pwsh
+        run: |
+          $output = & dart run benchmark_test --output jsonl `
+            benchmark/dart_allocator_workloads_test.dart 2> bench-dart-workloads.stderr.log
+          $code = $LASTEXITCODE
+          $output | Where-Object { $_ -match '^\s*\{' } |
+            Set-Content -Encoding utf8 bench-dart-workloads.jsonl
+          $output | Select-Object -Last 5
+          if ($code -ne 0) {
+            if (Test-Path bench-dart-workloads.stderr.log) {
+              Write-Host '--- DartAllocator live-set stderr ---'
+              Get-Content bench-dart-workloads.stderr.log
+            }
+            exit $code
+          }
       - name: Benchmark Bytes vs UnsafeBytes
         shell: pwsh
         run: |
@@ -436,6 +469,12 @@ jobs:
           out: assets/benchmarks-native.svg
           config: benchcat-native.toml
 
+      - name: Render allocator live-set SVG
+        uses: unk-404/benchcat@master
+        with:
+          format: benchmark_test
+          out: assets/benchmarks-allocator-workload.svg
+          config: benchcat-allocator-workload.toml
       - name: Render allocator benchmark SVG
         uses: unk-404/benchcat@master
         with:
@@ -476,6 +515,7 @@ jobs:
           $files = @(
             'assets/benchmarks-native.svg',
             'assets/benchmarks-allocator.svg',
+            'assets/benchmarks-allocator-workload.svg',
             'assets/benchmarks-core.svg',
             'assets/benchmarks-memory.svg',
             'assets/benchmarks-v2.svg',
@@ -518,6 +558,7 @@ jobs:
           }
           git commit -m "chore(bench): update benchmark SVGs [skip ci]"
           git push
+
 
 
 

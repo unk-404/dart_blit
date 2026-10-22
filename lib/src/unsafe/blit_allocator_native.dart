@@ -17,6 +17,8 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import 'allocator_api.dart';
+
 const int _smallPageSize = 64 * 1024;
 const int _mediumPageSize = 512 * 1024;
 const int _largePageSize = 4 * 1024 * 1024;
@@ -125,7 +127,7 @@ final class _Page {
   int freeHead = 0;
 }
 
-final class BlitAllocator {
+final class BlitAllocator implements UnsafeAllocator {
   BlitAllocator();
 
   final List<_Page?> _current = List<_Page?>.filled(_hugeBin, null);
@@ -144,6 +146,7 @@ final class BlitAllocator {
   // mimalloc keeps a page-local free list; this single-slot cache is the same
   // idea for the common immediate alloc/free pattern. It avoids the page map
   // entirely until a second live allocation or a non-LIFO free appears.
+  @override
   @pragma('vm:prefer-inline')
   int alloc(int size) {
     if (size <= _cachedCapacity) {
@@ -192,6 +195,7 @@ final class BlitAllocator {
     return address;
   }
 
+  @override
   @pragma('vm:prefer-inline')
   void free(int address) {
     if (address == _activeAddress) {
